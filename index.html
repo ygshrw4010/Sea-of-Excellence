@@ -228,32 +228,55 @@
 <script>
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // 1音を鳴らす補助関数（立ち上がりと減衰をつけて自然な音にする）
-    function tone(freq, startOffset, duration, { type = 'sine', volume = 0.2, decay = true } = {}) {
+    // 音量が大きくても割れないよう、全体にコンプレッサーをかける
+    const master = audioCtx.createDynamicsCompressor();
+    master.threshold.value = -12;
+    master.ratio.value = 6;
+    master.connect(audioCtx.destination);
+
+    // 1音を鳴らす補助関数（速い立ち上がり）
+    function tone(freq, startOffset, duration, { type = 'square', volume = 0.3, decay = true, lowpass = null } = {}) {
         const t0 = audioCtx.currentTime + startOffset;
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = type;
         osc.frequency.setValueAtTime(freq, t0);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
+
+        let node = osc;
+        if (lowpass) {
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = lowpass;
+            osc.connect(filter);
+            node = filter;
+        }
+        node.connect(gain);
+        gain.connect(master);
 
         gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.003);
         if (decay) {
+            gain.gain.setValueAtTime(volume, t0 + duration * 0.4);
             gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
         } else {
-            gain.gain.setValueAtTime(volume, t0 + duration - 0.03);
+            gain.gain.setValueAtTime(volume, t0 + duration - 0.04);
             gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
         }
         osc.start(t0);
         osc.stop(t0 + duration + 0.02);
     }
 
+    // 倍音を重ねた明るく硬い音（ピン／ポン）
+    function chime(freq, offset, duration) {
+        tone(freq,     offset, duration,       { type: 'square',   volume: 0.28 });
+        tone(freq * 2, offset, duration * 0.8, { type: 'triangle', volume: 0.18 });
+        tone(freq * 3, offset, duration * 0.5, { type: 'sine',     volume: 0.10 });
+    }
+
     // 「ピンポン」（高い音 → 低い音）
     function pingPong(offset) {
-        tone(1319, offset, 0.35);         // ピン (E6)
-        tone(988, offset + 0.18, 0.5);    // ポン (B5)
+        chime(1568, offset, 0.22);        // ピン (G6)
+        chime(1175, offset + 0.2, 0.45);  // ポン (D6)
     }
 
     function playSound(type) {
@@ -265,12 +288,12 @@
             pingPong(0);
             pingPong(0.55);
         } else if (type === 3) { // 効果音3: 不正解「ブー」
-            tone(110, 0, 0.8, { type: 'sawtooth', volume: 0.18, decay: false });
-            tone(116, 0, 0.8, { type: 'square', volume: 0.08, decay: false });
+            tone(120, 0, 0.9, { type: 'sawtooth', volume: 0.45, decay: false, lowpass: 1800 });
+            tone(124, 0, 0.9, { type: 'square',   volume: 0.25, decay: false, lowpass: 1800 });
+            tone(240, 0, 0.9, { type: 'sawtooth', volume: 0.15, decay: false, lowpass: 1800 });
         }
     }
 </script>
-
 <script>
     // --- アプリケーションのステート管理変数 ---
     let roomId = null;
