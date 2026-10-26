@@ -271,31 +271,68 @@
     let isPaused = false;
 
     // ご指定の高品質な日本語音声を選択して読み上げる関数
-    function speakWithBestVoice(text, onEndCallback) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ja-JP';
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
+        // Edge向け：高品質な日本語音声（Online (Natural)）を優先して読み上げる関数
+    let cachedJaVoice = null;
 
-        const voices = window.speechSynthesis.getVoices();
+    function selectJaVoice() {
+        const ja = window.speechSynthesis.getVoices()
+            .filter(v => v.lang.replace('_', '-').toLowerCase().startsWith('ja'));
+        if (ja.length === 0) return null;
+        return ja.find(v => v.name.includes('Nanami') && v.name.includes('Natural')) ||
+               ja.find(v => v.name.includes('Keita') && v.name.includes('Natural')) ||
+               ja.find(v => v.name.includes('Natural')) ||
+               ja.find(v => v.name.includes('Online')) ||
+               ja.find(v => v.name.includes('Haruka')) ||
+               ja[0];
+    }
 
-        const bestVoice = 
-            voices.find(v => v.name.includes('Natural')) ||   // Edgeの高音質AI音声（Keita/Nanami）
-            voices.find(v => v.name.includes('Google 日本語')) || // Chrome標準の高音質音声
-            voices.find(v => v.name.includes('Kyoko')) ||      // Mac標準女性
-            voices.find(v => v.name.includes('Otoya')) ||      // Mac標準男性
-            voices.find(v => v.lang.includes('ja'));
+    // Natural音声は読み込みが遅れて現れることがあるため、最大2秒待つ
+    function getBestJapaneseVoice() {
+        return new Promise(resolve => {
+            if (cachedJaVoice) return resolve(cachedJaVoice);
+            let tries = 0;
+            const check = () => {
+                const v = selectJaVoice();
+                const isNatural = v && v.name.includes('Natural');
+                if (isNatural || tries >= 20) {
+                    if (isNatural) cachedJaVoice = v;
+                    return resolve(v);
+                }
+                tries++;
+                setTimeout(check, 100);
+            };
+            check();
+        });
+    }
 
-        if (bestVoice) {
-            utterance.voice = bestVoice;
+    async function speakWithBestVoice(text, onEndCallback) {
+        const voice = await getBestJapaneseVoice();
+
+        // 句点などで文ごとに分割（長文の途切れ防止＆抑揚の安定化）
+        const chunks = (text.match(/[^。！？!?\n]+[。！？!?]?/g) || [])
+            .map(s => s.trim())
+            .filter(s => s);
+
+        if (chunks.length === 0) {
+            if (onEndCallback) onEndCallback();
+            return;
         }
 
-        if (onEndCallback) {
-            utterance.onend = onEndCallback;
-        }
+        chunks.forEach((chunk, i) => {
+            const utterance = new SpeechSynthesisUtterance(chunk);
+            utterance.lang = 'ja-JP';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            if (voice) utterance.voice = voice;
 
-        currentUtterance = utterance;
-        window.speechSynthesis.speak(utterance);
+            // 最後の文が読み終わったときだけコールバックを呼ぶ
+            if (i === chunks.length - 1 && onEndCallback) {
+                utterance.onend = onEndCallback;
+            }
+
+            currentUtterance = utterance;
+            window.speechSynthesis.speak(utterance);
+        });
     }
 
     if (synth.onvoiceschanged !== undefined) {
