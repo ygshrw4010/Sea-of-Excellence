@@ -702,18 +702,28 @@
             setTimeout(() => {
                 if (isPaused) return;
                 speakWithBestVoice(cleanText, () => {
-                    document.getElementById('game-log').innerText = 'ポーズ中 (4秒)...';
-                    readingTimer = setTimeout(async () => {
-                        // 1. 4秒間誰も押さなかった場合、5秒間問題文全文と答えと補足を表示したのちに次の問題へ
-                        if (myRole === 'A') {
-                            await window.FB.update(roomRef, { gameState: 'result_view' });
-                            setTimeout(async () => {
-                                await nextQuestion(data);
-                            }, 5000);
+                    // 誰も押さなかった場合：5秒間カウントダウンしてから結果表示へ
+                    let remaining = 5;
+                    const tick = async () => {
+                        if (isPaused) return;
+                        if (remaining <= 0) {
+                            // 5秒間誰も押さなかった場合、問題文全文と答えと補足を表示したのちに次の問題へ
+                            if (myRole === 'A') {
+                                await window.FB.update(roomRef, { gameState: 'result_view' });
+                                setTimeout(async () => {
+                                    await nextQuestion(data);
+                                }, 5000);
+                            }
+                            return;
                         }
-                    }, 4000);
+                        document.getElementById('game-log').innerText =
+                            `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`;
+                        remaining--;
+                        readingTimer = setTimeout(tick, 1000);
+                    };
+                    tick();
                 });
-            }, 600); // 一呼吸
+            }, 400); // 一呼吸（600ms → 400ms）
         });
     }
 
