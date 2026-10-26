@@ -273,24 +273,53 @@
         tone(freq * 3, offset, duration * 0.5, { type: 'sine',     volume: 0.10 });
     }
 
-    // 「ピンポン」（高い音 → 低い音）
-    function pingPong(offset) {
-        chime(1568, offset, 0.22);        // ピン (G6)
-        chime(1175, offset + 0.2, 0.45);  // ポン (D6)
+    // クイズ早押しボタン2 の音（タン・タン♪ などの軽快な高音の二連音）
+    function soundBuzzer2(offset) {
+        chime(1760, offset, 0.15);       // A6
+        chime(2637, offset + 0.12, 0.25);  // E7
+    }
+
+    // クイズ正解1 の音（ピーン！という高音の爽やかなチャイム）
+    function soundCorrect1(offset) {
+        chime(2093, offset, 0.35);       // C7
+        chime(2637, offset + 0.15, 0.45);  // E7
+    }
+
+    // クイズ不正解2 の音（ブーーッという低音の下降音）
+    function soundIncorrect2(offset) {
+        const t0 = audioCtx.currentTime + offset;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, t0);
+        osc.frequency.linearRampToValueAtTime(90, t0 + 0.6);
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 1200;
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(master);
+
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02);
+        gain.gain.setValueAtTime(0.4, t0 + 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.65);
+
+        osc.start(t0);
+        osc.stop(t0 + 0.68);
     }
 
     function playSound(type) {
         if (audioCtx.state === 'suspended') audioCtx.resume();
 
-        if (type === 1) { // 効果音1: 早押しボタン「ピンポン」
-            pingPong(0);
-        } else if (type === 2) { // 効果音2: 正解「ピンポンピンポン」
-            pingPong(0);
-            pingPong(0.55);
-        } else if (type === 3) { // 効果音3: 不正解「ブー」
-            tone(120, 0, 0.9, { type: 'sawtooth', volume: 0.45, decay: false, lowpass: 1800 });
-            tone(124, 0, 0.9, { type: 'square',   volume: 0.25, decay: false, lowpass: 1800 });
-            tone(240, 0, 0.9, { type: 'sawtooth', volume: 0.15, decay: false, lowpass: 1800 });
+        if (type === 1) { // 効果音1: クイズ早押しボタン2[cite: 1]
+            soundBuzzer2(0);
+        } else if (type === 2) { // 効果音2: クイズ正解1[cite: 2]
+            soundCorrect1(0);
+        } else if (type === 3) { // 効果音3: クイズ不正解2[cite: 3]
+            soundIncorrect2(0);
         }
     }
 </script>
