@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sea of Excellence</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --danger-color: #dc2626;
+            --success-color: #16a34a;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        h1, h2 { margin-top: 0; color: var(--primary-color); }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        input, select, button, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0 16px 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button.danger { background-color: var(--danger-color); }
+        button.success { background-color: var(--success-color); }
+        button:disabled { background-color: #94a3b8; cursor: not-allowed; }
+        .score-board {
+            display: flex;
+            justify-content: space-around;
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .player-score { text-align: center; }
+        .player-score.active-player { font-weight: bold; border-bottom: 3px solid var(--primary-color); }
+        #buzzer-btn {
+            height: 200px;
+            font-size: 2.5rem;
+            border-radius: 50%;
+            background: radial-gradient(circle, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 10px 20px rgba(220, 38, 38, 0.4);
+            margin: 20px auto;
+            display: block;
+            width: 200px;
+        }
+        #buzzer-btn:active { transform: scale(0.95); }
+        .log-box {
+            background: #1e293b;
+            color: #38bdf8;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            height: 120px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+        .question-display {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 15px;
+            background: #eff6ff;
+            border-left: 5px solid var(--primary-color);
+        }
+    </style>
+
+    <!-- Firebase SDK (Modular CDN) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, get, update, onValue, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // --- TODO: 自身のFirebaseプロジェクトの設定に書き換えてください ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyBRM6ky2j8tgWxIWeozUKH8UCrPD7jkEQU",
+  authDomain: "sea-of-excellence.firebaseapp.com",
+  databaseURL: "https://sea-of-excellence-default-rtdb.firebaseio.com",
+  projectId: "sea-of-excellence",
+  storageBucket: "sea-of-excellence.firebasestorage.app",
+  messagingSenderId: "745746858304",
+  appId: "1:745746858304:web:6266a34c4c0c1d12523aa5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // グローバル公開用
+        window.FB = { db, ref, set, get, update, onValue, remove, child };
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <!-- 1. ルーム開設・入室画面 -->
+    <div id="screen-room" class="screen active">
+        <h1>クイズ対戦ルーム</h1>
+        <div id="room-menu">
+            <h3>ルームを開設する（あなた＝開設者A）</h3>
+            <input type="text" id="create-room-name" placeholder="ルーム名">
+            <input type="text" id="create-room-pass" placeholder="パスワード（英数字のみ）">
+            <input type="text" id="create-user-name" placeholder="あなたの表示名（Aさん）">
+            <button onclick="createRoom()">ルームを開設</button>
+            <hr style="margin: 30px 0;">
+            <h3>ルームに入室する（Bさん / Cさん）</h3>
+            <input type="text" id="join-room-name" placeholder="ルーム名">
+            <input type="text" id="join-room-pass" placeholder="パスワード（英数字のみ）">
+            <input type="text" id="join-user-name" placeholder="あなたの表示名">
+            <button onclick="joinRoom()" class="success">ルームに入室</button>
+        </div>
+    </div>
+
+    <!-- 2. CSVアップロード画面 -->
+    <div id="screen-csv" class="screen">
+        <h2>問題CSVファイルのアップロード</h2>
+        <p>1列目: 問題番号, 2列目: 問題文, 3列目: 答え, 4列目: 補足</p>
+        <input type="file" id="csv-file-input" accept=".csv">
+        <button onclick="uploadCSV()">CSVを読み込む</button>
+        <div id="csv-status"></div>
+    </div>
+
+    <!-- 3. ルール設定画面 -->
+    <div id="screen-config" class="screen">
+        <h2>クイズルール設定</h2>
+        <label>ルール選択:</label>
+        <select id="config-rule-type" onchange="toggleRuleInputs()">
+            <option value="nm_marubatsu">n◯m×</option>
+            <option value="streak_marubatsu">連答付きn◯m×</option>
+            <option value="miss_streak_marubatsu">連誤答付きn◯m×</option>
+            <option value="plus_minus">+n-m</option>
+            <option value="n_by_n">n by n</option>
+            <option value="attack_survival">アタックサバイバル</option>
+        </select>
+
+        <div id="rule-params">
+            <div class="param-group" id="group-n">
+                <label>n (正解数 / 勝利点 / 持ち点):</label>
+                <input type="number" id="param-n" value="3" min="1">
+            </div>
+            <div class="param-group" id="group-m">
+                <label>m (不正解数 / 減点数 / 失格点):</label>
+                <input type="number" id="param-m" value="2" min="1">
+            </div>
+            <div class="param-group" id="group-p" style="display:none;">
+                <label>p (勝ち抜け点):</label>
+                <input type="number" id="param-p" value="10" min="1">
+            </div>
+            <div class="param-group" id="group-q" style="display:none;">
+                <label>q (失格点):</label>
+                <input type="number" id="param-q" value="-5">
+            </div>
+        </div>
+
+        <label>開始する問題番号 (CSVの1列目):</label>
+        <input type="number" id="config-start-index" value="1" min="1">
+
+        <button onclick="saveConfigAndStart()" class="success">この設定でゲームを開始する</button>
+        <button onclick="goToCsvScreen()" style="background-color: #64748b;">CSVアップロード画面に戻る</button>
+    </div>
+
+    <!-- 5. クイズ進行画面 -->
+    <div id="screen-game" class="screen">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="game-rule-title">ルール表示</h2>
+            <button id="pause-btn" onclick="togglePause()" style="width: auto; padding: 5px 15px; background: #eab308;">一時停止</button>
+        </div>
+
+        <div class="score-board" id="score-board">
+            <!-- スコアが動的に入る -->
+        </div>
+
+        <div class="log-box" id="game-log">ゲーム待機中...</div>
+
+        <!-- プレイヤー用操作パネル -->
+        <div id="panel-playing" style="text-align: center;">
+            <button id="buzzer-btn" onclick="pressBuzzer()">解答！<br><span style="font-size:1rem;">(Enterキーでも可)</span></button>
+        </div>
+
+        <!-- 審判用判定パネル -->
+        <div id="panel-judge" style="display:none; background:#fef3c7; padding:15px; border-radius:8px; border:2px solid #f59e0b;">
+            <h3>【判定役】回答者: <span id="judge-target-name"></span> さん</h3>
+            <div class="question-display" id="judge-q-display"></div>
+            <button onclick="judgeAnswer(true)" class="success" style="font-size: 1.2rem;">正解 (効果音2)</button>
+            <button onclick="judgeAnswer(false)" class="danger" style="font-size: 1.2rem;">不正解 (効果音3)</button>
+        </div>
+
+        <!-- 正解・不正解後の確認表示パネル (5秒間表示) -->
+        <div id="panel-result-view" style="display:none; background:#e2e8f0; padding:15px; border-radius:8px;">
+            <h3>問題結果確認（5秒後に次の問題へ）</h3>
+            <div id="result-view-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 効果音用の簡易Web Audio API合成（実ファイルに差し替え可能） -->
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 1) { // 効果音1: ボタン音 (高めのピピッ)
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        } else if (type === 2) { // 効果音2: 正解 (ドレミ)
+            osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+            osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+        } else if (type === 3) { // 効果音3: 不正解 (低音ブー)
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+    }
+</script>
+
+<script>
+    // --- アプリケーションのステート管理変数 ---
+    let roomId = null;
+    let myRole = null; // 'A', 'B', 'C'
+    let myName = "";
+    let roomRef = null;
+    let unsubscribeRoom = null;
+
+    // 音声読み上げ・タイマー管理
+    let synth = window.speechSynthesis;
+    let currentUtterance = null;
+    let readingTimer = null;
+    let isPaused = false;
+
+    // 画面切り替え
+    function showScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    // ルール設定項目の切り替え
+    function toggleRuleInputs() {
+        const rule = document.getElementById('config-rule-type').value;
+        document.getElementById('group-p').style.display = (rule === 'plus_minus') ? 'block' : 'none';
+        document.getElementById('group-q').style.display = (rule === 'plus_minus') ? 'block' : 'none';
+    }
+
+    // 1. ルーム開設
+    async function createRoom() {
+        const rName = document.getElementById('create-room-name').value.trim();
+        const rPass = document.getElementById('create-room-pass').value.trim();
+        myName = document.getElementById('create-user-name').value.trim();
+
+        if (!rName || !rPass || !myName) {
+            alert('すべての項目を入力してください。');
+            return;
+        }
+
+        roomId = rName;
+        myRole = 'A';
+        roomRef = window.FB.ref(window.FB.db, 'rooms/' + roomId);
+
+        const snapshot = await window.FB.get(roomRef);
+        if (snapshot.exists()) {
+            alert('同名のルームが既に存在します。');
+            return;
+        }
+
+        // 初期ルームデータ作成
+        await window.FB.set(roomRef, {
+            password: rPass,
+            players: {
+                A: { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' }
+            },
+            status: 'waiting_csv',
+            currentIndex: 1,
+            buzzerPressedBy: null,
+            paused: false
+        });
+
+        alert('ルームを開設しました！CSVアップロード画面に移動します。');
+        showScreen('screen-csv');
+        initRoomListener();
+    }
+
+    // 1. ルーム入室
+    async function joinRoom() {
+        const rName = document.getElementById('join-room-name').value.trim();
+        const rPass = document.getElementById('join-room-pass').value.trim();
+        myName = document.getElementById('join-user-name').value.trim();
+
+        if (!rName || !rPass || !myName) {
+            alert('すべての項目を入力してください。');
+            return;
+        }
+
+        roomId = rName;
+        roomRef = window.FB.ref(window.FB.db, 'rooms/' + roomId);
+        const snapshot = await window.FB.get(roomRef);
+
+        if (!snapshot.exists()) {
+            alert('指定されたルームが存在しません。');
+            return;
+        }
+
+        const roomData = snapshot.val();
+        if (roomData.password !== rPass) {
+            alert('パスワードが間違っています。');
+            return;
+        }
+
+        const players = roomData.players || {};
+        const count = Object.keys(players).length;
+
+        if (count >= 3) {
+            alert('定員（開設者除き2人、計3人）に達しています。');
+            return;
+        }
+
+        myRole = count === 1 ? 'B' : 'C';
+
+        players[myRole] = { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' };
+        await window.FB.update(roomRef, { players });
+
+        alert(`${myRole}さんとして入室しました！`);
+        initRoomListener();
+        checkRoomStatus(roomData);
+    }
+
+    function checkRoomStatus(data) {
+        if (data.status === 'waiting_csv') {
+            showScreen('screen-csv');
+            document.getElementById('csv-status').innerText = '開設者がCSVファイルをアップロードするのを待っています...';
+            if (myRole !== 'A') document.getElementById('csv-file-input').disabled = true;
+        } else if (data.status === 'waiting_config') {
+            showScreen('screen-config');
+            if (myRole !== 'A') {
+                document.querySelectorAll('#screen-config input, #screen-config select, #screen-config button').forEach(el => el.disabled = true);
+            }
+        } else {
+            showScreen('screen-game');
+        }
+    }
+
+    // 2. CSVアップロード（開設者のみ）
+    async function uploadCSV() {
+        if (myRole !== 'A') return;
+        const fileInput = document.getElementById('csv-file-input');
+        if (fileInput.files.length === 0) {
+            alert('CSVファイルを選択してください。');
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const text = await file.text();
+        const lines = text.split(/\r\n|\n/);
+        const questions = [];
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+            const cols = line.split(',');
+            if (cols.length >= 3) {
+                questions.push({
+                    id: parseInt(cols[0].trim()),
+                    question: cols[1].trim(),
+                    answer: cols[2].trim(),
+                    supplement: cols[3] ? cols[3].trim() : ''
+                });
+            }
+        }
+
+        if (questions.length === 0) {
+            alert('有効な問題が読み込めませんでした。');
+            return;
+        }
+
+        await window.FB.update(roomRef, {
+            questions: questions,
+            status: 'waiting_config'
+        });
+
+        showScreen('screen-config');
+        alert('CSVのアップロードが完了しました！ルールを設定してください。');
+    }
+
+    function goToCsvScreen() {
+        if (myRole !== 'A') return;
+        window.FB.update(roomRef, { status: 'waiting_csv' });
+        showScreen('screen-csv');
+    }
+
+    // 3. ルール保存・ゲーム開始
+    async function saveConfigAndStart() {
+        if (myRole !== 'A') return;
+        const ruleType = document.getElementById('config-rule-type').value;
+        const n = parseInt(document.getElementById('param-n').value) || 0;
+        const m = parseInt(document.getElementById('param-m').value) || 0;
+        const p = parseInt(document.getElementById('param-p').value) || 10;
+        const q = parseInt(document.getElementById('param-q').value) || -5;
+        const startIndex = parseInt(document.getElementById('config-start-index').value) || 1;
+
+        // 全プレイヤーのスコアを初期化
+        const snapshot = await window.FB.get(window.FB.child(roomRef, 'players'));
+        const players = snapshot.val();
+        for (let key in players) {
+            players[key].maru = 0;
+            players[key].batsu = 0;
+            players[key].score = (ruleType === 'plus_minus' || ruleType === 'n_by_n' || ruleType === 'attack_survival') ? (ruleType === 'attack_survival' ? n : 0) : 0;
+            players[key].status = 'playing';
+        }
+
+        await window.FB.update(roomRef, {
+            rule: { type: ruleType, n, m, p, q },
+            currentIndex: startIndex,
+            players: players,
+            status: 'playing',
+            gameState: 'reading',
+            buzzerPressedBy: null,
+            paused: false
+        });
+    }
+
+    // リアルタイム同期リスナー
+    function initRoomListener() {
+        if (unsubscribeRoom) unsubscribeRoom();
+        unsubscribeRoom = window.FB.onValue(roomRef, (snapshot) => {
+            if (!snapshot.exists()) return;
+            const data = snapshot.val();
+
+            // 画面遷移の同期
+            if (data.status === 'waiting_csv') {
+                showScreen('screen-csv');
+            } else if (data.status === 'waiting_config') {
+                showScreen('screen-config');
+            } else if (data.status === 'playing') {
+                showScreen('screen-game');
+                updateGameUI(data);
+            }
+        });
+    }
+
+    // ゲームUI更新
+    let lastProcessedIndex = -1;
+    function updateGameUI(data) {
+        // スコアボード描画
+        let sbHtml = '';
+        const players = data.players || {};
+        for (let key of ['A', 'B', 'C']) {
+            if (!players[key]) continue;
+            const p = players[key];
+            sbHtml += `<div class="player-score ${key === myRole ? 'active-player' : ''}">
+                <strong>${key}: ${p.name}</strong><br>
+                ◯: ${p.maru} / ×: ${p.batsu} / 総得点: ${p.score}<br>
+                状态: ${p.status}
+            </div>`;
+        }
+        document.getElementById('score-board').innerHTML = sbHtml;
+
+        // ルール表示
+        document.getElementById('game-rule-title').innerText = `ルール: ${data.rule.type} (問題番号: ${data.currentIndex})`;
+
+        // 一時停止状態の反映
+        isPaused = data.paused;
+        document.getElementById('pause-btn').innerText = isPaused ? '再開する' : '一時停止';
+
+        // 状態ごとのパネル切り替え
+        const gState = data.gameState; // 'reading', 'buzzer_hit', 'result_view'
+        const buzzerBy = data.buzzerPressedBy;
+
+        if (gState === 'reading') {
+            document.getElementById('panel-playing').style.display = 'block';
+            document.getElementById('panel-judge').style.display = 'none';
+            document.getElementById('panel-result-view').style.display = 'none';
+
+            // Aさん（またはホスト）が問題読み上げのトリガーを管理
+            if (data.currentIndex !== lastProcessedIndex && !isPaused) {
+                lastProcessedIndex = data.currentIndex;
+                startReadingQuestion(data);
+            }
+        } else if (gState === 'buzzer_hit') {
+            document.getElementById('panel-playing').style.display = 'none';
+            
+            // 判定役の判定: 3人の場合 A->B, B->C, C->A. 2人の場合は遅い方
+            let judgeUser = getJudgeUser(buzzerBy, Object.keys(players).length);
+            
+            if (myRole === judgeUser) {
+                document.getElementById('panel-judge').style.display = 'block';
+                document.getElementById('judge-target-name').innerText = players[buzzerBy].name;
+                const q = data.questions.find(item => item.id === data.currentIndex);
+                document.getElementById('judge-q-display').innerText = `問題: ${q.question}\n答え: ${q.answer}\n補足: ${q.supplement}`;
+            } else {
+                document.getElementById('panel-judge').style.display = 'none';
+                document.getElementById('game-log').innerText = `${players[buzzerBy].name} さんが解答ボタンを押しました！ ${players[judgeUser].name} さんが判定中です...`;
+            }
+            document.getElementById('panel-result-view').style.display = 'none';
+        } else if (gState === 'result_view') {
+            document.getElementById('panel-playing').style.display = 'none';
+            document.getElementById('panel-judge').style.display = 'none';
+            document.getElementById('panel-result-view').style.display = 'block';
+
+            const q = data.questions.find(item => item.id === data.currentIndex);
+            document.getElementById('result-view-content').innerHTML = `
+                <p><strong>問題${q.id}:</strong> ${q.question}</p>
+                <p><strong>答え:</strong> ${q.answer}</p>
+                <p><strong>補足:</strong> ${q.supplement}</p>
+            `;
+        }
+    }
+
+    // 判定役を決定するロジック
+    function getJudgeUser(buzzerBy, playerCount) {
+        if (playerCount === 2) {
+            return buzzerBy === 'A' ? 'B' : 'A';
+        } else {
+            if (buzzerBy === 'A') return 'B';
+            if (buzzerBy === 'B') return 'C';
+            if (buzzerBy === 'C') return 'A';
+        }
+        return 'A';
+    }
+
+    // 問題読み上げ処理
+    function startReadingQuestion(data) {
+        if (synth.speaking) synth.cancel();
+        const q = data.questions.find(item => item.id === data.currentIndex);
+        if (!q) {
+            alert('すべての問題を終了しました。');
+            window.FB.update(roomRef, { status: 'waiting_config' });
+            return;
+        }
+
+        // （）内を除去
+        let cleanText = q.question.replace(/（.*?）|\(.*?\)/g, '');
+
+        document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
+
+        // 「問題」と言って一呼吸置いてから読む
+        currentUtterance = new SpeechSynthesisUtterance("問題。");
+        currentUtterance.rate = 1.0;
+
+        currentUtterance.onend = () => {
+            setTimeout(() => {
+                if (isPaused) return;
+                currentUtterance = new SpeechSynthesisUtterance(cleanText);
+                
+                // 読み上げ終了・4秒ポーズのタイマー
+                currentUtterance.onend = () => {
+                    document.getElementById('game-log').innerText = 'ポーズ中 (4秒)...';
+                    readingTimer = setTimeout(() => {
+                        // 4秒間誰も押さなかった場合、次の問題へ
+                        if (myRole === 'A') nextQuestion(data);
+                    }, 4000);
+                };
+
+                synth.speak(currentUtterance);
+            }, 600); // 一呼吸
+        };
+
+        synth.speak(currentUtterance);
+    }
+
+    // 解答ボタン押下
+    async function pressBuzzer() {
+        const snapshot = await window.FB.get(roomRef);
+        const data = snapshot.val();
+        if (data.gameState !== 'reading' || data.buzzerPressedBy) return;
+
+        // 読み上げ停止 & 効果音1
+        if (synth.speaking) synth.cancel();
+        if (readingTimer) clearTimeout(readingTimer);
+        playSound(1);
+
+        // Firebaseに誰が押したかを記録
+        await window.FB.update(roomRef, {
+            buzzerPressedBy: myRole,
+            gameState: 'buzzer_hit'
+        });
+    }
+
+    // 審判の正誤判定
+    async function judgeAnswer(isCorrect) {
+        if (myRole !== getJudgeUser((await window.FB.get(window.FB.child(roomRef, 'buzzerPressedBy'))).val(), 3)) return;
+
+        const snapshot = await window.FB.get(roomRef);
+        const data = snapshot.val();
+        const buzzerBy = data.buzzerPressedBy;
+        const players = data.players;
+        const p = players[buzzerBy];
+        const rule = data.rule;
+
+        if (isCorrect) {
+            playSound(2);
+            p.maru += 1;
+            // ルールごとのスコア加算処理
+            if (rule.type.includes('marubatsu')) {
+                // 勝利判定チェック
+                if (p.maru >= rule.n) p.status = 'winner';
+            }
+        } else {
+            playSound(3);
+            p.batsu += 1;
+            if (rule.type.includes('marubatsu')) {
+                if (p.batsu >= rule.m) p.status = 'loser';
+            }
+        }
+
+        // DB更新：正解・不正解結果と結果表示モードへの切り替え（5秒間）
+        await window.FB.update(roomRef, {
+            players: players,
+            gameState: 'result_view'
+        });
+
+        // 5秒間表示したのちに次の問題へ進む（開設者Aが代表してタイマー実行）
+        if (myRole === 'A') {
+            setTimeout(async () => {
+                await nextQuestion(data);
+            }, 5000);
+        }
+    }
+
+    // 次の問題へ進む or 終了判定
+    async function nextQuestion(data) {
+        const players = data.players;
+        const rule = data.rule;
+
+        // 終了条件チェック (6の条件)
+        let isGameOver = false;
+        for (let key in players) {
+            if (rule.type.includes('marubatsu') && (players[key].maru >= rule.n || players[key].batsu >= rule.m)) {
+                isGameOver = true;
+            }
+        }
+
+        if (isGameOver) {
+            alert('ゲームセット！ルール設定画面に戻ります。');
+            await window.FB.update(roomRef, { status: 'waiting_config' });
+            return;
+        }
+
+        // 次の問題番号へ
+        await window.FB.update(roomRef, {
+            currentIndex: data.currentIndex + 1,
+            buzzerPressedBy: null,
+            gameState: 'reading'
+        });
+    }
+
+    // 一時停止切り替え
+    async function togglePause() {
+        const snapshot = await window.FB.get(window.FB.child(roomRef, 'paused'));
+        const currentPaused = snapshot.val();
+        await window.FB.update(roomRef, { paused: !currentPaused });
+        if (!currentPaused) {
+            if (synth.speaking) synth.cancel();
+            if (readingTimer) clearTimeout(readingTimer);
+        }
+    }
+
+    // Enterキーで早押し
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && document.getElementById('screen-game').classList.contains('active')) {
+            const btn = document.getElementById('buzzer-btn');
+            if (btn && btn.offsetParent !== null) {
+                pressBuzzer();
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
