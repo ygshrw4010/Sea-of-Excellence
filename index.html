@@ -270,27 +270,24 @@
     let readingTimer = null;
     let isPaused = false;
 
-    // 流暢な男性音声を選択して読み上げる関数
-    function speakWithMaleVoice(text, onEndCallback) {
-        if (synth.speaking) synth.cancel();
-        
+    // ご指定の高品質な日本語音声を選択して読み上げる関数
+    function speakWithBestVoice(text, onEndCallback) {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ja-JP';
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
 
-        const voices = synth.getVoices();
-        const targetVoice = 
-            voices.find(v => v.name.includes('Keita')) ||      // Edge (Natural AI Male)
-            voices.find(v => v.name.includes('Ichiro')) ||     // Windows Local Male
-            voices.find(v => v.name.includes('Otoya')) ||      // Mac Male
-            voices.find(v => v.name.includes('Hattori')) ||    // Mac Male
-            voices.find(v => v.name.includes('Reed')) ||       // Mac Novelty Male
-            voices.find(v => v.lang.includes('ja') && v.name.includes('Google')) || // Fallback
+        const voices = window.speechSynthesis.getVoices();
+
+        const bestVoice = 
+            voices.find(v => v.name.includes('Natural')) ||   // Edgeの高音質AI音声（Keita/Nanami）
+            voices.find(v => v.name.includes('Google 日本語')) || // Chrome標準の高音質音声
+            voices.find(v => v.name.includes('Kyoko')) ||      // Mac標準女性
+            voices.find(v => v.name.includes('Otoya')) ||      // Mac標準男性
             voices.find(v => v.lang.includes('ja'));
 
-        if (targetVoice) {
-            utterance.voice = targetVoice;
+        if (bestVoice) {
+            utterance.voice = bestVoice;
         }
 
         if (onEndCallback) {
@@ -298,11 +295,13 @@
         }
 
         currentUtterance = utterance;
-        synth.speak(utterance);
+        window.speechSynthesis.speak(utterance);
     }
 
     if (synth.onvoiceschanged !== undefined) {
-        synth.onvoiceschanged = () => synth.getVoices();
+        synth.onvoiceschanged = () => {
+            synth.getVoices();
+        };
     }
     synth.getVoices();
 
@@ -628,12 +627,10 @@
         document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
 
         // 「問題」と言って一呼吸置いてから読む
-        speakWithMaleVoice("問題。", () => {
+        speakWithBestVoice("問題。", () => {
             setTimeout(() => {
                 if (isPaused) return;
-                
-                // 読み上げ終了・4秒ポーズのタイマー
-                speakWithMaleVoice(cleanText, () => {
+                speakWithBestVoice(cleanText, () => {
                     document.getElementById('game-log').innerText = 'ポーズ中 (4秒)...';
                     readingTimer = setTimeout(async () => {
                         // 1. 4秒間誰も押さなかった場合、5秒間問題文全文と答えと補足を表示したのちに次の問題へ
