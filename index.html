@@ -224,102 +224,29 @@
     </div>
 </div>
 
-<!-- 効果音用の簡易Web Audio API合成（実ファイルに差し替え可能） -->
+<!-- 添付された音声ファイルを使用する設定 -->
 <script>
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    // 音量が大きくても割れないよう、全体にコンプレッサーをかける
-    const master = audioCtx.createDynamicsCompressor();
-    master.threshold.value = -12;
-    master.ratio.value = 6;
-    master.connect(audioCtx.destination);
-
-    // 1音を鳴らす補助関数（速い立ち上がり）
-    function tone(freq, startOffset, duration, { type = 'square', volume = 0.3, decay = true, lowpass = null } = {}) {
-        const t0 = audioCtx.currentTime + startOffset;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, t0);
-
-        let node = osc;
-        if (lowpass) {
-            const filter = audioCtx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.value = lowpass;
-            osc.connect(filter);
-            node = filter;
-        }
-        node.connect(gain);
-        gain.connect(master);
-
-        gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.003);
-        if (decay) {
-            gain.gain.setValueAtTime(volume, t0 + duration * 0.4);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-        } else {
-            gain.gain.setValueAtTime(volume, t0 + duration - 0.04);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-        }
-        osc.start(t0);
-        osc.stop(t0 + duration + 0.02);
-    }
-
-    // 倍音を重ねた明るく硬い音（ピン／ポン）
-    function chime(freq, offset, duration) {
-        tone(freq,     offset, duration,       { type: 'square',   volume: 0.28 });
-        tone(freq * 2, offset, duration * 0.8, { type: 'triangle', volume: 0.18 });
-        tone(freq * 3, offset, duration * 0.5, { type: 'sine',     volume: 0.10 });
-    }
-
-    // クイズ早押しボタン2 の音（タン・タン♪ などの軽快な高音の二連音）
-    function soundBuzzer2(offset) {
-        chime(1760, offset, 0.15);       // A6
-        chime(2637, offset + 0.12, 0.25);  // E7
-    }
-
-    // クイズ正解1 の音（ピーン！という高音の爽やかなチャイム）
-    function soundCorrect1(offset) {
-        chime(2093, offset, 0.35);       // C7
-        chime(2637, offset + 0.15, 0.45);  // E7
-    }
-
-    // クイズ不正解2 の音（ブーーッという低音の下降音）
-    function soundIncorrect2(offset) {
-        const t0 = audioCtx.currentTime + offset;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(140, t0);
-        osc.frequency.linearRampToValueAtTime(90, t0 + 0.6);
-
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 1200;
-
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-
-        gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02);
-        gain.gain.setValueAtTime(0.4, t0 + 0.5);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.65);
-
-        osc.start(t0);
-        osc.stop(t0 + 0.68);
-    }
+    // 提供された音声データのURL（Object URL または 相対/絶対パス）
+    // ※ 同じフォルダに配置する場合はファイル名に変更してください
+    const sound1 = new Audio('クイズ早押しボタン2.mp3'); //[cite: 2]
+    const sound2 = new Audio('クイズ正解1.mp3');       //
+    const sound3 = new Audio('クイズ不正解2.mp3');     //
 
     function playSound(type) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+        let targetSound;
+        if (type === 1) {
+            targetSound = sound1;
+        } else if (type === 2) {
+            targetSound = sound2;
+        } else if (type === 3) {
+            targetSound = sound3;
+        }
 
-        if (type === 1) { // 効果音1: クイズ早押しボタン2[cite: 1]
-            soundBuzzer2(0);
-        } else if (type === 2) { // 効果音2: クイズ正解1[cite: 2]
-            soundCorrect1(0);
-        } else if (type === 3) { // 効果音3: クイズ不正解2[cite: 3]
-            soundIncorrect2(0);
+        if (targetSound) {
+            targetSound.currentTime = 0; // 先頭に戻して再生
+            targetSound.play().catch(e => {
+                console.warn("音声の再生がブロックされました:", e);
+            });
         }
     }
 </script>
@@ -338,7 +265,6 @@
     let isPaused = false;
 
     // ご指定の高品質な日本語音声を選択して読み上げる関数
-        // Edge向け：高品質な日本語音声（Online (Natural)）を優先して読み上げる関数
     let cachedJaVoice = null;
 
     function selectJaVoice() {
@@ -353,7 +279,6 @@
                ja[0];
     }
 
-    // Natural音声は読み込みが遅れて現れることがあるため、最大2秒待つ
     function getBestJapaneseVoice() {
         return new Promise(resolve => {
             if (cachedJaVoice) return resolve(cachedJaVoice);
@@ -372,7 +297,7 @@
         });
     }
 
-        let speakToken = 0;
+    let speakToken = 0;
 
     function speakWithBestVoice(text, onEndCallback) {
         const myToken = ++speakToken;
@@ -413,12 +338,10 @@
                     if (finished) return;
                     finished = true;
                     clearTimeout(guard);
-                    // 解答ボタンや一時停止による中断のときは、続きを読まない
                     if (e.error === 'canceled' || e.error === 'interrupted') return;
                     speakNext();
                 };
 
-                // 終了イベントが来ない場合の安全装置
                 guard = setTimeout(() => {
                     if (finished) return;
                     finished = true;
@@ -443,7 +366,6 @@
     }
     synth.getVoices();
 
-    // 2. ルール名を「n◯m×」や「+n-m」のように設定した数字を入れて日本語でフォーマットする関数
     function formatRuleName(rule) {
         if (!rule) return '';
         const type = rule.type;
@@ -462,20 +384,17 @@
         }
     }
 
-    // 画面切り替え
     function showScreen(screenId) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(screenId).classList.add('active');
     }
 
-    // ルール設定項目の切り替え
     function toggleRuleInputs() {
         const rule = document.getElementById('config-rule-type').value;
         document.getElementById('group-p').style.display = (rule === 'plus_minus') ? 'block' : 'none';
         document.getElementById('group-q').style.display = (rule === 'plus_minus') ? 'block' : 'none';
     }
 
-    // 1. ルーム開設
     async function createRoom() {
         const rName = document.getElementById('create-room-name').value.trim();
         const rPass = document.getElementById('create-room-pass').value.trim();
@@ -496,10 +415,8 @@
             return;
         }
 
-        // ブラウザ切断時にルームデータを削除する設定
         window.FB.onDisconnect(roomRef).remove();
 
-        // 初期ルームデータ作成
         await window.FB.set(roomRef, {
             password: rPass,
             players: {
@@ -516,7 +433,6 @@
         initRoomListener();
     }
 
-    // 1. ルーム入室
     async function joinRoom() {
         const rName = document.getElementById('join-room-name').value.trim();
         const rPass = document.getElementById('join-room-pass').value.trim();
@@ -571,7 +487,6 @@
         }
     }
 
-    // 2. CSVアップロード（全員可能）
     async function uploadCSV() {
         const fileInput = document.getElementById('csv-file-input');
         if (fileInput.files.length === 0) {
@@ -616,7 +531,6 @@
         showScreen('screen-csv');
     }
 
-    // 3. ルール保存・ゲーム開始
     async function saveConfigAndStart() {
         if (myRole !== 'A') return;
         const ruleType = document.getElementById('config-rule-type').value;
@@ -626,7 +540,6 @@
         const q = parseInt(document.getElementById('param-q').value) || -5;
         const startIndex = parseInt(document.getElementById('config-start-index').value) || 1;
 
-        // 全プレイヤーのスコアを初期化
         const snapshot = await window.FB.get(window.FB.child(roomRef, 'players'));
         const players = snapshot.val();
         for (let key in players) {
@@ -647,14 +560,12 @@
         });
     }
 
-    // リアルタイム同期リスナー
     function initRoomListener() {
         if (unsubscribeRoom) unsubscribeRoom();
         unsubscribeRoom = window.FB.onValue(roomRef, (snapshot) => {
             if (!snapshot.exists()) return;
             const data = snapshot.val();
 
-            // 画面遷移の同期
             if (data.status === 'waiting_csv') {
                 showScreen('screen-csv');
             } else if (data.status === 'waiting_config') {
@@ -666,10 +577,8 @@
         });
     }
 
-    // ゲームUI更新
     let lastProcessedIndex = -1;
     function updateGameUI(data) {
-        // 3. スコアボード描画（自分だけでなく他のプレイヤーの得点状況も自分の画面に表示）
         let sbHtml = '';
         const players = data.players || {};
         for (let key of ['A', 'B', 'C']) {
@@ -683,18 +592,15 @@
         }
         document.getElementById('score-board').innerHTML = sbHtml;
 
-        // 2. ルール表示（設定した数字入りの形式で表示）
         if (data.rule && data.rule.type) {
             let formattedRule = formatRuleName(data.rule);
             document.getElementById('game-rule-title').innerText = `ルール: ${formattedRule} (問題番号: ${data.currentIndex})`;
         }
 
-        // 一時停止状態の反映
         isPaused = data.paused;
         document.getElementById('pause-btn').innerText = isPaused ? '再開する' : '一時停止';
 
-        // 状態ごとのパネル切り替え
-        const gState = data.gameState; // 'reading', 'buzzer_hit', 'result_view'
+        const gState = data.gameState;
         const buzzerBy = data.buzzerPressedBy;
 
         if (gState === 'reading') {
@@ -702,7 +608,6 @@
             document.getElementById('panel-judge').style.display = 'none';
             document.getElementById('panel-result-view').style.display = 'none';
 
-            // Aさん（またはホスト）が問題読み上げのトリガーを管理
             if (data.currentIndex !== lastProcessedIndex && !isPaused) {
                 lastProcessedIndex = data.currentIndex;
                 startReadingQuestion(data);
@@ -710,7 +615,6 @@
         } else if (gState === 'buzzer_hit') {
             document.getElementById('panel-playing').style.display = 'none';
             
-            // 判定役の判定: 3人の場合 A->B, B->C, C->A. 2人の場合は遅い方
             let judgeUser = getJudgeUser(buzzerBy, Object.keys(players).length);
             
             if (myRole === judgeUser) {
@@ -737,7 +641,6 @@
         }
     }
 
-    // 判定役を決定するロジック
     function getJudgeUser(buzzerBy, playerCount) {
         if (playerCount === 2) {
             return buzzerBy === 'A' ? 'B' : 'A';
@@ -749,7 +652,6 @@
         return 'A';
     }
 
-    // 問題読み上げ処理
     function startReadingQuestion(data) {
         if (synth.speaking) synth.cancel();
         const q = data.questions.find(item => item.id === data.currentIndex);
@@ -759,22 +661,18 @@
             return;
         }
 
-        // （）内を除去
         let cleanText = q.question.replace(/（.*?）|\(.*?\)/g, '');
 
         document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
 
-        // 「問題」と言って一呼吸置いてから読む
         speakWithBestVoice("問題。", () => {
             setTimeout(() => {
                 if (isPaused) return;
                 speakWithBestVoice(cleanText, () => {
-                    // 誰も押さなかった場合：5秒間カウントダウンしてから結果表示へ
                     let remaining = 5;
                     const tick = async () => {
                         if (isPaused) return;
                         if (remaining <= 0) {
-                            // 5秒間誰も押さなかった場合、問題文全文と答えと補足を表示したのちに次の問題へ
                             if (myRole === 'A') {
                                 await window.FB.update(roomRef, { gameState: 'result_view' });
                                 setTimeout(async () => {
@@ -790,29 +688,25 @@
                     };
                     tick();
                 });
-            }, 50); // 一呼吸（600ms → 400ms）
+            }, 50);
         });
     }
 
-    // 解答ボタン押下
     async function pressBuzzer() {
         const snapshot = await window.FB.get(roomRef);
         const data = snapshot.val();
         if (data.gameState !== 'reading' || data.buzzerPressedBy) return;
 
-        // 読み上げ停止 & 効果音1
         if (synth.speaking) synth.cancel();
         if (readingTimer) clearTimeout(readingTimer);
         playSound(1);
 
-        // Firebaseに誰が押したかを記録
         await window.FB.update(roomRef, {
             buzzerPressedBy: myRole,
             gameState: 'buzzer_hit'
         });
     }
 
-    // 審判の正誤判定
     async function judgeAnswer(isCorrect) {
         if (myRole !== getJudgeUser((await window.FB.get(window.FB.child(roomRef, 'buzzerPressedBy'))).val(), 3)) return;
 
@@ -826,9 +720,7 @@
         if (isCorrect) {
             playSound(2);
             p.maru += 1;
-            // ルールごとのスコア加算処理
             if (rule.type.includes('marubatsu')) {
-                // 勝利判定チェック
                 if (p.maru >= rule.n) p.status = 'winner';
             }
         } else {
@@ -839,13 +731,11 @@
             }
         }
 
-        // DB更新：正解・不正解結果と結果表示モードへの切り替え（5秒間）
         await window.FB.update(roomRef, {
             players: players,
             gameState: 'result_view'
         });
 
-        // 5秒間表示したのちに次の問題へ進む（開設者Aが代表してタイマー実行）
         if (myRole === 'A') {
             setTimeout(async () => {
                 await nextQuestion(data);
@@ -853,12 +743,10 @@
         }
     }
 
-    // 次の問題へ進む or 終了判定
     async function nextQuestion(data) {
         const players = data.players;
         const rule = data.rule;
 
-        // 終了条件チェック
         let isGameOver = false;
         for (let key in players) {
             if (rule.type.includes('marubatsu') && (players[key].maru >= rule.n || players[key].batsu >= rule.m)) {
@@ -872,7 +760,6 @@
             return;
         }
 
-        // 次の問題番号へ
         await window.FB.update(roomRef, {
             currentIndex: data.currentIndex + 1,
             buzzerPressedBy: null,
@@ -880,7 +767,6 @@
         });
     }
 
-    // 一時停止切り替え
     async function togglePause() {
         const snapshot = await window.FB.get(window.FB.child(roomRef, 'paused'));
         const currentPaused = snapshot.val();
@@ -891,7 +777,6 @@
         }
     }
 
-    // Enterキーで早押し
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && document.getElementById('screen-game').classList.contains('active')) {
             const btn = document.getElementById('buzzer-btn');
