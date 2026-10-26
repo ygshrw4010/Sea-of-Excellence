@@ -269,26 +269,44 @@
     let currentUtterance = null;
     let readingTimer = null;
     let isPaused = false;
-    let selectedMaleVoice = null; 
 
-    // 内蔵音声の自動捜索（ご提示いただいたコードのロジック）
-    function findBestMaleVoice() {
+    // 流暢な男性音声を選択して読み上げる関数
+    function speakWithMaleVoice(text, onEndCallback) {
+        if (synth.speaking) synth.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ja-JP';
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+
         const voices = synth.getVoices();
-        const targetNames = ["Otoya", "Ichiro", "Microsoft Ichiro", "Keita"];
-        for (let name of targetNames) {
-            const found = voices.find(v => v.name.includes(name) && v.lang.includes("ja"));
-            if (found) {
-                selectedMaleVoice = found;
-                break;
-            }
-        }
-    }
-    if (synth.onvoiceschanged !== undefined) {
-        synth.onvoiceschanged = findBestMaleVoice;
-    }
-    findBestMaleVoice();
+        const targetVoice = 
+            voices.find(v => v.name.includes('Keita')) ||      // Edge (Natural AI Male)
+            voices.find(v => v.name.includes('Ichiro')) ||     // Windows Local Male
+            voices.find(v => v.name.includes('Otoya')) ||      // Mac Male
+            voices.find(v => v.name.includes('Hattori')) ||    // Mac Male
+            voices.find(v => v.name.includes('Reed')) ||       // Mac Novelty Male
+            voices.find(v => v.lang.includes('ja') && v.name.includes('Google')) || // Fallback
+            voices.find(v => v.lang.includes('ja'));
 
-    // ルール名を「n◯m×」や「+n-m」のように設定した数字を入れて日本語でフォーマットする関数
+        if (targetVoice) {
+            utterance.voice = targetVoice;
+        }
+
+        if (onEndCallback) {
+            utterance.onend = onEndCallback;
+        }
+
+        currentUtterance = utterance;
+        synth.speak(utterance);
+    }
+
+    if (synth.onvoiceschanged !== undefined) {
+        synth.onvoiceschanged = () => synth.getVoices();
+    }
+    synth.getVoices();
+
+    // 2. ルール名を「n◯m×」や「+n-m」のように設定した数字を入れて日本語でフォーマットする関数
     function formatRuleName(rule) {
         if (!rule) return '';
         const type = rule.type;
@@ -514,7 +532,7 @@
     // ゲームUI更新
     let lastProcessedIndex = -1;
     function updateGameUI(data) {
-        // スコアボード描画
+        // 3. スコアボード描画（自分だけでなく他のプレイヤーの得点状況も自分の画面に表示）
         let sbHtml = '';
         const players = data.players || {};
         for (let key of ['A', 'B', 'C']) {
@@ -528,7 +546,7 @@
         }
         document.getElementById('score-board').innerHTML = sbHtml;
 
-        // ルール表示
+        // 2. ルール表示（設定した数字入りの形式で表示）
         if (data.rule && data.rule.type) {
             let formattedRule = formatRuleName(data.rule);
             document.getElementById('game-rule-title').innerText = `ルール: ${formattedRule} (問題番号: ${data.currentIndex})`;
@@ -594,19 +612,9 @@
         return 'A';
     }
 
-    // 音声読み上げ処理（提供コードの滑らかな音声設定を適用）
-    function speak(text, callback) {
-        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-        findBestMaleVoice();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "ja-JP";
-        if (selectedMaleVoice) utterance.voice = selectedMaleVoice;
-        utterance.onend = () => { if (callback) callback(); };
-        window.speechSynthesis.speak(utterance);
-    }
-
+    // 問題読み上げ処理
     function startReadingQuestion(data) {
-        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+        if (synth.speaking) synth.cancel();
         const q = data.questions.find(item => item.id === data.currentIndex);
         if (!q) {
             alert('すべての問題を終了しました。');
@@ -620,13 +628,15 @@
         document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
 
         // 「問題」と言って一呼吸置いてから読む
-        speak("問題。", () => {
+        speakWithMaleVoice("問題。", () => {
             setTimeout(() => {
                 if (isPaused) return;
-                speak(cleanText, () => {
+                
+                // 読み上げ終了・4秒ポーズのタイマー
+                speakWithMaleVoice(cleanText, () => {
                     document.getElementById('game-log').innerText = 'ポーズ中 (4秒)...';
                     readingTimer = setTimeout(async () => {
-                        // 4秒間誰も押さなかった場合、5秒間問題文全文と答えと補足を表示したのちに次の問題へ
+                        // 1. 4秒間誰も押さなかった場合、5秒間問題文全文と答えと補足を表示したのちに次の問題へ
                         if (myRole === 'A') {
                             await window.FB.update(roomRef, { gameState: 'result_view' });
                             setTimeout(async () => {
@@ -646,7 +656,7 @@
         if (data.gameState !== 'reading' || data.buzzerPressedBy) return;
 
         // 読み上げ停止 & 効果音1
-        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+        if (synth.speaking) synth.cancel();
         if (readingTimer) clearTimeout(readingTimer);
         playSound(1);
 
@@ -731,7 +741,7 @@
         const currentPaused = snapshot.val();
         await window.FB.update(roomRef, { paused: !currentPaused });
         if (!currentPaused) {
-            if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+            if (synth.speaking) synth.cancel();
             if (readingTimer) clearTimeout(readingTimer);
         }
     }
