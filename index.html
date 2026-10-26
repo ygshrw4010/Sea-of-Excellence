@@ -227,31 +227,46 @@
 <!-- 効果音用の簡易Web Audio API合成（実ファイルに差し替え可能） -->
 <script>
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playSound(type) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    // 1音を鳴らす補助関数（立ち上がりと減衰をつけて自然な音にする）
+    function tone(freq, startOffset, duration, { type = 'sine', volume = 0.2, decay = true } = {}) {
+        const t0 = audioCtx.currentTime + startOffset;
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t0);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
 
-        if (type === 1) { // 効果音1: ボタン音 (高めのピピッ)
-            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.15);
-        } else if (type === 2) { // 効果音2: 正解 (ドレミ)
-            osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-            osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.3);
-        } else if (type === 3) { // 効果音3: 不正解 (低音ブー)
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc.frequency.setValueAtTime(100, audioCtx.currentTime + 0.2);
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.01);
+        if (decay) {
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+        } else {
+            gain.gain.setValueAtTime(volume, t0 + duration - 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+        }
+        osc.start(t0);
+        osc.stop(t0 + duration + 0.02);
+    }
+
+    // 「ピンポン」（高い音 → 低い音）
+    function pingPong(offset) {
+        tone(1319, offset, 0.35);         // ピン (E6)
+        tone(988, offset + 0.18, 0.5);    // ポン (B5)
+    }
+
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        if (type === 1) { // 効果音1: 早押しボタン「ピンポン」
+            pingPong(0);
+        } else if (type === 2) { // 効果音2: 正解「ピンポンピンポン」
+            pingPong(0);
+            pingPong(0.55);
+        } else if (type === 3) { // 効果音3: 不正解「ブー」
+            tone(110, 0, 0.8, { type: 'sawtooth', volume: 0.18, decay: false });
+            tone(116, 0, 0.8, { type: 'square', volume: 0.08, decay: false });
         }
     }
 </script>
@@ -723,7 +738,7 @@
                     };
                     tick();
                 });
-            }, 400); // 一呼吸（600ms → 400ms）
+            }, 200); // 一呼吸（600ms → 400ms）
         });
     }
 
