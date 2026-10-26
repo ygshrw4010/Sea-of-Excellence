@@ -101,24 +101,24 @@
     <!-- Firebase SDK (Modular CDN) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, update, onValue, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, update, onValue, remove, child, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // --- TODO: 自身のFirebaseプロジェクトの設定に書き換えてください ---
+        // --- 自身のFirebaseプロジェクトの設定 ---
         const firebaseConfig = {
-  apiKey: "AIzaSyBRM6ky2j8tgWxIWeozUKH8UCrPD7jkEQU",
-  authDomain: "sea-of-excellence.firebaseapp.com",
-  databaseURL: "https://sea-of-excellence-default-rtdb.firebaseio.com",
-  projectId: "sea-of-excellence",
-  storageBucket: "sea-of-excellence.firebasestorage.app",
-  messagingSenderId: "745746858304",
-  appId: "1:745746858304:web:6266a34c4c0c1d12523aa5"
+            apiKey: "AIzaSyBRM6ky2j8tgWxIWeozUKH8UCrPD7jkEQU",
+            authDomain: "sea-of-excellence.firebaseapp.com",
+            databaseURL: "https://sea-of-excellence-default-rtdb.firebaseio.com",
+            projectId: "sea-of-excellence",
+            storageBucket: "sea-of-excellence.firebasestorage.app",
+            messagingSenderId: "745746858304",
+            appId: "1:745746858304:web:6266a34c4c0c1d12523aa5"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
         // グローバル公開用
-        window.FB = { db, ref, set, get, update, onValue, remove, child };
+        window.FB = { db, ref, set, get, update, onValue, remove, child, onDisconnect };
     </script>
 </head>
 <body>
@@ -126,7 +126,7 @@
 <div class="container">
     <!-- 1. ルーム開設・入室画面 -->
     <div id="screen-room" class="screen active">
-        <h1>クイズ対戦ルーム</h1>
+        <h1>Sea of Excellence</h1>
         <div id="room-menu">
             <h3>ルームを開設する（あなた＝開設者A）</h3>
             <input type="text" id="create-room-name" placeholder="ルーム名">
@@ -269,6 +269,33 @@
     let currentUtterance = null;
     let readingTimer = null;
     let isPaused = false;
+    let japaneseVoice = null;
+
+    // 滑らかな音声（日本語の自然な音声）をロード
+    function loadVoices() {
+        const voices = synth.getVoices();
+        // Google日本語音声や自然な日本語の音声を優先的に探す
+        japaneseVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Kyoko') || v.name.includes('Otoya'))) ||
+                        voices.find(v => v.lang === 'ja-JP') ||
+                        voices.find(v => v.lang.startsWith('ja'));
+    }
+    if (synth.onvoiceschanged !== undefined) {
+        synth.onvoiceschanged = loadVoices;
+    }
+    loadVoices();
+
+    // ルール名を日本語表記に変換する関数
+    function translateRuleName(ruleType) {
+        switch(ruleType) {
+            case 'nm_marubatsu': return 'エヌマルエムバツ';
+            case 'streak_marubatsu': return '連答付きエヌマルエムバツ';
+            case 'miss_streak_marubatsu': return '連誤答付きエヌマルエムバツ';
+            case 'plus_minus': return 'プラスエヌマイナスエム';
+            case 'n_by_n': return 'エヌバイエヌ';
+            case 'attack_survival': return 'アタックサバイバル';
+            default: return ruleType;
+        }
+    }
 
     // 画面切り替え
     function showScreen(screenId) {
@@ -303,6 +330,9 @@
             alert('同名のルームが既に存在します。');
             return;
         }
+
+        // ブラウザ切断時にルームデータを削除する設定
+        window.FB.onDisconnect(roomRef).remove();
 
         // 初期ルームデータ作成
         await window.FB.set(roomRef, {
@@ -368,21 +398,16 @@
     function checkRoomStatus(data) {
         if (data.status === 'waiting_csv') {
             showScreen('screen-csv');
-            document.getElementById('csv-status').innerText = '開設者がCSVファイルをアップロードするのを待っています...';
-            if (myRole !== 'A') document.getElementById('csv-file-input').disabled = true;
+            document.getElementById('csv-status').innerText = 'CSVファイルをアップロードしてください。';
         } else if (data.status === 'waiting_config') {
             showScreen('screen-config');
-            if (myRole !== 'A') {
-                document.querySelectorAll('#screen-config input, #screen-config select, #screen-config button').forEach(el => el.disabled = true);
-            }
         } else {
             showScreen('screen-game');
         }
     }
 
-    // 2. CSVアップロード（開設者のみ）
+    // 2. CSVアップロード（全員可能）
     async function uploadCSV() {
-        if (myRole !== 'A') return;
         const fileInput = document.getElementById('csv-file-input');
         if (fileInput.files.length === 0) {
             alert('CSVファイルを選択してください。');
@@ -422,7 +447,6 @@
     }
 
     function goToCsvScreen() {
-        if (myRole !== 'A') return;
         window.FB.update(roomRef, { status: 'waiting_csv' });
         showScreen('screen-csv');
     }
@@ -480,7 +504,7 @@
     // ゲームUI更新
     let lastProcessedIndex = -1;
     function updateGameUI(data) {
-        // スコアボード描画
+        // スコアボード描画（4. 全員が全員の得点状況を見られるようにする）
         let sbHtml = '';
         const players = data.players || {};
         for (let key of ['A', 'B', 'C']) {
@@ -489,13 +513,16 @@
             sbHtml += `<div class="player-score ${key === myRole ? 'active-player' : ''}">
                 <strong>${key}: ${p.name}</strong><br>
                 ◯: ${p.maru} / ×: ${p.batsu} / 総得点: ${p.score}<br>
-                状态: ${p.status}
+                状態: ${p.status}
             </div>`;
         }
         document.getElementById('score-board').innerHTML = sbHtml;
 
-        // ルール表示
-        document.getElementById('game-rule-title').innerText = `ルール: ${data.rule.type} (問題番号: ${data.currentIndex})`;
+        // ルール表示（5. ルールを日本語表記）
+        if (data.rule && data.rule.type) {
+            let ruleJP = translateRuleName(data.rule.type);
+            document.getElementById('game-rule-title').innerText = `ルール: ${ruleJP} (問題番号: ${data.currentIndex})`;
+        }
 
         // 一時停止状態の反映
         isPaused = data.paused;
@@ -557,7 +584,7 @@
         return 'A';
     }
 
-    // 問題読み上げ処理
+    // 問題読み上げ処理（3. より滑らかな音声）
     function startReadingQuestion(data) {
         if (synth.speaking) synth.cancel();
         const q = data.questions.find(item => item.id === data.currentIndex);
@@ -574,12 +601,17 @@
 
         // 「問題」と言って一呼吸置いてから読む
         currentUtterance = new SpeechSynthesisUtterance("問題。");
-        currentUtterance.rate = 1.0;
+        if (japaneseVoice) currentUtterance.voice = japaneseVoice;
+        currentUtterance.rate = 1.05; // 少し滑らかに聞こえる速度調整
+        currentUtterance.pitch = 1.0;
 
         currentUtterance.onend = () => {
             setTimeout(() => {
                 if (isPaused) return;
                 currentUtterance = new SpeechSynthesisUtterance(cleanText);
+                if (japaneseVoice) currentUtterance.voice = japaneseVoice;
+                currentUtterance.rate = 1.05;
+                currentUtterance.pitch = 1.0;
                 
                 // 読み上げ終了・4秒ポーズのタイマー
                 currentUtterance.onend = () => {
@@ -661,7 +693,7 @@
         const players = data.players;
         const rule = data.rule;
 
-        // 終了条件チェック (6の条件)
+        // 終了条件チェック
         let isGameOver = false;
         for (let key in players) {
             if (rule.type.includes('marubatsu') && (players[key].maru >= rule.n || players[key].batsu >= rule.m)) {
