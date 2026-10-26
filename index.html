@@ -305,33 +305,67 @@
         });
     }
 
-    async function speakWithBestVoice(text, onEndCallback) {
-        const voice = await getBestJapaneseVoice();
+        let speakToken = 0;
 
-        // 句点などで文ごとに分割（長文の途切れ防止＆抑揚の安定化）
-        const chunks = (text.match(/[^。！？!?\n]+[。！？!?]?/g) || [])
-            .map(s => s.trim())
-            .filter(s => s);
+    function speakWithBestVoice(text, onEndCallback) {
+        const myToken = ++speakToken;
 
-        if (chunks.length === 0) {
-            if (onEndCallback) onEndCallback();
-            return;
-        }
+        getBestJapaneseVoice().then(voice => {
+            if (myToken !== speakToken) return;
 
-        chunks.forEach((chunk, i) => {
-            const utterance = new SpeechSynthesisUtterance(chunk);
-            utterance.lang = 'ja-JP';
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
-            if (voice) utterance.voice = voice;
+            const chunks = (text.match(/[^。！？!?\n]+[。！？!?]?/g) || [])
+                .map(s => s.trim())
+                .filter(s => s);
 
-            // 最後の文が読み終わったときだけコールバックを呼ぶ
-            if (i === chunks.length - 1 && onEndCallback) {
-                utterance.onend = onEndCallback;
-            }
+            let i = 0;
+            const speakNext = () => {
+                if (myToken !== speakToken) return;
+                if (i >= chunks.length) {
+                    if (onEndCallback) onEndCallback();
+                    return;
+                }
 
-            currentUtterance = utterance;
-            window.speechSynthesis.speak(utterance);
+                const chunk = chunks[i++];
+                const utterance = new SpeechSynthesisUtterance(chunk);
+                utterance.lang = 'ja-JP';
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                if (voice) utterance.voice = voice;
+
+                let finished = false;
+                let guard = null;
+
+                utterance.onend = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(guard);
+                    speakNext();
+                };
+                utterance.onerror = (e) => {
+                    console.warn('TTS error:', e.error, chunk);
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(guard);
+                    // 解答ボタンや一時停止による中断のときは、続きを読まない
+                    if (e.error === 'canceled' || e.error === 'interrupted') return;
+                    speakNext();
+                };
+
+                // 終了イベントが来ない場合の安全装置
+                guard = setTimeout(() => {
+                    if (finished) return;
+                    finished = true;
+                    console.warn('TTS timeout, skipping:', chunk);
+                    window.speechSynthesis.cancel();
+                    setTimeout(speakNext, 100);
+                }, Math.max(8000, chunk.length * 700));
+
+                currentUtterance = utterance;
+                window.speechSynthesis.resume();
+                window.speechSynthesis.speak(utterance);
+            };
+
+            speakNext();
         });
     }
 
