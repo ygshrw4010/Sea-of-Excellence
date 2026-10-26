@@ -271,29 +271,38 @@
     let isPaused = false;
     let japaneseVoice = null;
 
-    // 滑らかな音声（日本語の自然な音声）をロード
+    // Google以外の高品質な日本語音声（Microsoft Natural, Kyoko, Otoya等）を選択する処理
     function loadVoices() {
         const voices = synth.getVoices();
-        // Google日本語音声や自然な日本語の音声を優先的に探す
-        japaneseVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Kyoko') || v.name.includes('Otoya'))) ||
-                        voices.find(v => v.lang === 'ja-JP') ||
+        const jaVoices = voices.filter(v => v.lang.startsWith('ja') && !v.name.includes('Google'));
+        
+        // 自然な音声（Natural / Premium / Kyoko / Otoya / Nanami / Keita）を優先検索
+        japaneseVoice = jaVoices.find(v => v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Kyoko') || v.name.includes('Otoya') || v.name.includes('Nanami') || v.name.includes('Keita')) ||
+                        jaVoices[0] || 
                         voices.find(v => v.lang.startsWith('ja'));
     }
+
     if (synth.onvoiceschanged !== undefined) {
         synth.onvoiceschanged = loadVoices;
     }
     loadVoices();
 
-    // ルール名を日本語表記に変換する関数
-    function translateRuleName(ruleType) {
-        switch(ruleType) {
-            case 'nm_marubatsu': return 'エヌマルエムバツ';
-            case 'streak_marubatsu': return '連答付きエヌマルエムバツ';
-            case 'miss_streak_marubatsu': return '連誤答付きエヌマルエムバツ';
-            case 'plus_minus': return 'プラスエヌマイナスエム';
-            case 'n_by_n': return 'エヌバイエヌ';
-            case 'attack_survival': return 'アタックサバイバル';
-            default: return ruleType;
+    // 2. ルール名を「n◯m×」や「+n-m」のように設定した数字を入れて日本語でフォーマットする関数
+    function formatRuleName(rule) {
+        if (!rule) return '';
+        const type = rule.type;
+        const n = rule.n;
+        const m = rule.m;
+        const p = rule.p;
+
+        switch(type) {
+            case 'nm_marubatsu': return `${n}◯${m}×`;
+            case 'streak_marubatsu': return `連答付き${n}◯${m}×`;
+            case 'miss_streak_marubatsu': return `連誤答付き${n}◯${m}×`;
+            case 'plus_minus': return `+${n}-${m}`;
+            case 'n_by_n': return `${n} by ${n}`;
+            case 'attack_survival': return `アタックサバイバル (${n}点)`;
+            default: return type;
         }
     }
 
@@ -504,7 +513,7 @@
     // ゲームUI更新
     let lastProcessedIndex = -1;
     function updateGameUI(data) {
-        // スコアボード描画（4. 全員が全員の得点状況を見られるようにする）
+        // 3. スコアボード描画（自分だけでなく他のプレイヤーの得点状況も自分の画面に表示）
         let sbHtml = '';
         const players = data.players || {};
         for (let key of ['A', 'B', 'C']) {
@@ -518,10 +527,10 @@
         }
         document.getElementById('score-board').innerHTML = sbHtml;
 
-        // ルール表示（5. ルールを日本語表記）
+        // 2. ルール表示（設定した数字入りの形式で表示）
         if (data.rule && data.rule.type) {
-            let ruleJP = translateRuleName(data.rule.type);
-            document.getElementById('game-rule-title').innerText = `ルール: ${ruleJP} (問題番号: ${data.currentIndex})`;
+            let formattedRule = formatRuleName(data.rule);
+            document.getElementById('game-rule-title').innerText = `ルール: ${formattedRule} (問題番号: ${data.currentIndex})`;
         }
 
         // 一時停止状態の反映
@@ -584,7 +593,7 @@
         return 'A';
     }
 
-    // 問題読み上げ処理（3. より滑らかな音声）
+    // 問題読み上げ処理
     function startReadingQuestion(data) {
         if (synth.speaking) synth.cancel();
         const q = data.questions.find(item => item.id === data.currentIndex);
@@ -602,7 +611,7 @@
         // 「問題」と言って一呼吸置いてから読む
         currentUtterance = new SpeechSynthesisUtterance("問題。");
         if (japaneseVoice) currentUtterance.voice = japaneseVoice;
-        currentUtterance.rate = 1.05; // 少し滑らかに聞こえる速度調整
+        currentUtterance.rate = 1.0;
         currentUtterance.pitch = 1.0;
 
         currentUtterance.onend = () => {
@@ -610,15 +619,20 @@
                 if (isPaused) return;
                 currentUtterance = new SpeechSynthesisUtterance(cleanText);
                 if (japaneseVoice) currentUtterance.voice = japaneseVoice;
-                currentUtterance.rate = 1.05;
+                currentUtterance.rate = 1.0;
                 currentUtterance.pitch = 1.0;
                 
                 // 読み上げ終了・4秒ポーズのタイマー
                 currentUtterance.onend = () => {
                     document.getElementById('game-log').innerText = 'ポーズ中 (4秒)...';
-                    readingTimer = setTimeout(() => {
-                        // 4秒間誰も押さなかった場合、次の問題へ
-                        if (myRole === 'A') nextQuestion(data);
+                    readingTimer = setTimeout(async () => {
+                        // 1. 4秒間誰も押さなかった場合、5秒間問題文全文と答えと補足を表示したのちに次の問題へ
+                        if (myRole === 'A') {
+                            await window.FB.update(roomRef, { gameState: 'result_view' });
+                            setTimeout(async () => {
+                                await nextQuestion(data);
+                            }, 5000);
+                        }
                     }, 4000);
                 };
 
