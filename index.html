@@ -701,26 +701,27 @@
 
         document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
 
-        speakWithBestVoice("問題", () => {
-            if (isPaused) return;
-            speakWithBestVoice(cleanText, () => {
-                let remaining = 5;
-                const tick = async () => {
-                    if (isPaused) return;
-                    if (remaining <= 0) {
-                        if (myRole === 'A') {
-                            await window.FB.update(roomRef, { gameState: 'result_view' });
-                        }
-                        return;
-                    }
-                    document.getElementById('game-log').innerText =
-                        `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`;
-                    remaining--;
-                    readingTimer = setTimeout(tick, 1000);
-                };
-                tick();
-            });
-        });
+        if (isPaused) return;
+
+// 「問題」のあとに、読点（、）やスペースを使って「間」を調整する
+// 例：読点を2つ重ねる、または全角スペースを入れるなど
+speakWithBestVoice("問題、、" + cleanText, () => {
+    let remaining = 5;
+    const tick = async () => {
+        if (isPaused) return;
+        if (remaining <= 0) {
+            if (myRole === 'A') {
+                await window.FB.update(roomRef, { gameState: 'result_view' });
+            }
+            return;
+        }
+        document.getElementById('game-log').innerText =
+            `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`;
+        remaining--;
+        readingTimer = setTimeout(tick, 1000);
+    };
+    tick();
+});
     }
 
     async function pressBuzzer() {
