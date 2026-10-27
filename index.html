@@ -444,6 +444,7 @@
         }
 
         roomId = rName;
+        // ★修正点: 入室時にも roomRef を確実に設定
         roomRef = window.FB.ref(window.FB.db, 'rooms/' + roomId);
         const snapshot = await window.FB.get(roomRef);
 
@@ -471,6 +472,7 @@
         players[myRole] = { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' };
         await window.FB.update(roomRef, { players });
 
+        // ★修正点: 入室成功時にリスナーを初期化
         initRoomListener();
         checkRoomStatus(roomData);
     }
