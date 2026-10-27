@@ -222,7 +222,7 @@
 
 <script>
     const sound1 = new Audio('botun.mp3');
-    const sound2 = new Audio('correct.mp3');       
+    const sound2 = new Audio('correct.mp3');        
     const sound3 = new Audio('incorrect.mp3');     
 
     function playSound(type) {
@@ -559,6 +559,7 @@
     }
 
     let lastSoundTimestamp = 0;
+    let lastGameOverState = false;
 
     function initRoomListener() {
         if (unsubscribeRoom) unsubscribeRoom();
@@ -569,6 +570,25 @@
             if (data.soundEvent && data.soundEvent.timestamp > lastSoundTimestamp) {
                 lastSoundTimestamp = data.soundEvent.timestamp;
                 playSound(data.soundEvent.type);
+            }
+
+            // ゲームセット判定の監視（全員にポップアップを表示する）
+            if (data.status === 'playing' && data.players && data.rule) {
+                let isGameOver = false;
+                for (let key in data.players) {
+                    if (data.rule.type.includes('marubatsu') && (data.players[key].maru >= data.rule.n || data.players[key].batsu >= data.rule.m)) {
+                        isGameOver = true;
+                    }
+                }
+                if (isGameOver && !lastGameOverState) {
+                    lastGameOverState = true;
+                    alert('ゲームセット！ルール設定画面に戻ります。');
+                    if (myRole === 'A') {
+                        window.FB.update(roomRef, { status: 'waiting_config' });
+                    }
+                } else if (!isGameOver) {
+                    lastGameOverState = false;
+                }
             }
 
             if (data.status === 'waiting_csv') {
@@ -591,7 +611,9 @@
             const p = players[key];
             sbHtml += `<div class="player-score ${key === myRole ? 'active-player' : ''}">
                 <strong>${key}: ${p.name}</strong><br>
-                ◯: ${p.maru} / ×: ${p.batsu} / 総得点: ${p.score}
+                ◯: <button onclick="changeScore('${key}', 'maru', 1)" style="width:auto; padding:2px 6px; margin:2px;">+</button>${p.maru}<button onclick="changeScore('${key}', 'maru', -1)" style="width:auto; padding:2px 6px; margin:2px;">-</button> / 
+                ×: <button onclick="changeScore('${key}', 'batsu', 1)" style="width:auto; padding:2px 6px; margin:2px;">+</button>${p.batsu}<button onclick="changeScore('${key}', 'batsu', -1)" style="width:auto; padding:2px 6px; margin:2px;">-</button> / 
+                総得点: ${p.score}
             </div>`;
         }
         document.getElementById('score-board').innerHTML = sbHtml;
@@ -660,6 +682,17 @@
             if (myRole === 'A' && !resultTimer) {
                 startResultCountdown(data);
             }
+        }
+    }
+
+    async function changeScore(playerKey, field, delta) {
+        const snapshot = await window.FB.get(roomRef);
+        if (!snapshot.exists()) return;
+        const data = snapshot.val();
+        const players = data.players;
+        if (players && players[playerKey]) {
+            players[playerKey][field] = Math.max(0, (players[playerKey][field] || 0) + delta);
+            await window.FB.update(roomRef, { players: players });
         }
     }
 
@@ -793,8 +826,9 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
         }
 
         if (isGameOver) {
-            alert('ゲームセット！ルール設定画面に戻ります。');
-            await window.FB.update(roomRef, { status: 'waiting_config' });
+            if (myRole === 'A') {
+                await window.FB.update(roomRef, { status: 'waiting_config' });
+            }
             return;
         }
 
@@ -833,6 +867,7 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
     window.pressBuzzer = pressBuzzer;
     window.judgeAnswer = judgeAnswer;
     window.togglePause = togglePause;
+    window.changeScore = changeScore;
 </script>
 
 </body>
