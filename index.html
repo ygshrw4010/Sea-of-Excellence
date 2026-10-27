@@ -103,7 +103,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, get, update, onValue, remove, child, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // --- 自身のFirebaseプロジェクトの設定 ---
         const firebaseConfig = {
             apiKey: "AIzaSyBRM6ky2j8tgWxIWeozUKH8UCrPD7jkEQU",
             authDomain: "sea-of-excellence.firebaseapp.com",
@@ -117,7 +116,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // グローバル公開用
         window.FB = { db, ref, set, get, update, onValue, remove, child, onDisconnect };
     </script>
 </head>
@@ -197,9 +195,7 @@
             <button id="pause-btn" onclick="togglePause()" style="width: auto; padding: 5px 15px; background: #eab308;">一時停止</button>
         </div>
 
-        <div class="score-board" id="score-board">
-            <!-- スコアが動的に入る -->
-        </div>
+        <div class="score-board" id="score-board"></div>
 
         <div class="log-box" id="game-log">ゲーム待機中...</div>
 
@@ -216,7 +212,7 @@
             <button onclick="judgeAnswer(false)" class="danger" style="font-size: 1.2rem;">不正解 (効果音3)</button>
         </div>
 
-        <!-- 正解・不正解後の確認表示パネル (秒数カウントダウン表示) -->
+        <!-- 正解・不正解後の確認表示パネル -->
         <div id="panel-result-view" style="display:none; background:#e2e8f0; padding:15px; border-radius:8px;">
             <h3 id="result-countdown-title">問題結果確認（5秒後に次の問題へ）</h3>
             <div id="result-view-content"></div>
@@ -224,7 +220,6 @@
     </div>
 </div>
 
-<!-- 添付された音声ファイルを使用する設定 -->
 <script>
     const sound1 = new Audio('botun.mp3');
     const sound2 = new Audio('correct.mp3');       
@@ -232,13 +227,9 @@
 
     function playSound(type) {
         let targetSound;
-        if (type === 1) {
-            targetSound = sound1;
-        } else if (type === 2) {
-            targetSound = sound2;
-        } else if (type === 3) {
-            targetSound = sound3;
-        }
+        if (type === 1) targetSound = sound1;
+        else if (type === 2) targetSound = sound2;
+        else if (type === 3) targetSound = sound3;
 
         if (targetSound) {
             targetSound.currentTime = 0;
@@ -248,22 +239,19 @@
         }
     }
 </script>
+
 <script>
-    // --- アプリケーションのステート管理変数 ---
     let roomId = null;
-    let myRole = null; // 'A', 'B', 'C'
+    let myRole = null;
     let myName = "";
     let roomRef = null;
     let unsubscribeRoom = null;
 
-    // 音声読み上げ・タイマー管理
     let synth = window.speechSynthesis;
     let currentUtterance = null;
     let readingTimer = null;
     let resultTimer = null;
     let isPaused = false;
-
-    // ご指定の高品質な日本語音声を選択して読み上げる関数
     let cachedJaVoice = null;
 
     function selectJaVoice() {
@@ -333,7 +321,6 @@
                     speakNext();
                 };
                 utterance.onerror = (e) => {
-                    console.warn('TTS error:', e.error, chunk);
                     if (finished) return;
                     finished = true;
                     clearTimeout(guard);
@@ -344,7 +331,6 @@
                 guard = setTimeout(() => {
                     if (finished) return;
                     finished = true;
-                    console.warn('TTS timeout, skipping:', chunk);
                     window.speechSynthesis.cancel();
                     setTimeout(speakNext, 100);
                 }, Math.max(8000, chunk.length * 700));
@@ -359,9 +345,7 @@
     }
 
     if (synth.onvoiceschanged !== undefined) {
-        synth.onvoiceschanged = () => {
-            synth.getVoices();
-        };
+        synth.onvoiceschanged = () => { synth.getVoices(); };
     }
     synth.getVoices();
 
@@ -370,7 +354,6 @@
         const type = rule.type;
         const n = rule.n;
         const m = rule.m;
-        const p = rule.p;
 
         switch(type) {
             case 'nm_marubatsu': return `${n}◯${m}×`;
@@ -828,7 +811,6 @@
         }
     });
 
-    // --- グローバル関数登録（Uncaught ReferenceError 対策） ---
     window.createRoom = createRoom;
     window.joinRoom = joinRoom;
     window.uploadCSV = uploadCSV;
