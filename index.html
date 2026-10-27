@@ -192,7 +192,10 @@
     <div id="screen-game" class="screen">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2 id="game-rule-title">ルール表示</h2>
-            <button id="pause-btn" onclick="togglePause()" style="width: auto; padding: 5px 15px; background: #eab308;">一時停止</button>
+            <div>
+                <button id="return-config-btn" onclick="goToConfigScreen()" style="width: auto; padding: 5px 15px; background: #64748b; margin-right: 5px;">ルール設定画面に戻る</button>
+                <button id="pause-btn" onclick="togglePause()" style="width: auto; padding: 5px 15px; background: #eab308;">一時停止</button>
+            </div>
         </div>
 
         <div class="score-board" id="score-board"></div>
@@ -444,7 +447,6 @@
         }
 
         roomId = rName;
-        // ★修正点: 入室時にも roomRef を確実に設定
         roomRef = window.FB.ref(window.FB.db, 'rooms/' + roomId);
         const snapshot = await window.FB.get(roomRef);
 
@@ -472,7 +474,6 @@
         players[myRole] = { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' };
         await window.FB.update(roomRef, { players });
 
-        // ★修正点: 入室成功時にリスナーを初期化
         initRoomListener();
         checkRoomStatus(roomData);
     }
@@ -489,70 +490,73 @@
     }
 
     async function uploadCSV() {
-    if (!roomRef) {
-        alert('ルームに接続されていません。再度入室し直してください。');
-        return;
-    }
-
-    const fileInput = document.getElementById('csv-file-input');
-    if (!fileInput.files || fileInput.files.length === 0) {
-        alert('CSVファイルを選択してください。');
-        return;
-    }
-
-    const file = fileInput.files[0];
-
-    try {
-        // ファイルをテキストとして読み込み
-        const text = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = (e) => reject(new Error('ファイルの読み込みに失敗しました。'));
-            // UTF-8で読み込み（必要に応じて Shift-JIS に変更可能）
-            reader.readAsText(file, 'UTF-8');
-        });
-
-        const lines = text.split(/\r\n|\n/);
-        const questions = [];
-
-        for (let line of lines) {
-            if (!line.trim()) continue;
-            // ダブルクォーテーションやカンマの分離に対応した簡易パース
-            const cols = line.split(',');
-            if (cols.length >= 3) {
-                questions.push({
-                    id: parseInt(cols[0].trim()),
-                    question: cols[1].trim().replace(/^"|"$/g, ''),
-                    answer: cols[2].trim().replace(/^"|"$/g, ''),
-                    supplement: cols[3] ? cols[3].trim().replace(/^"|"$/g, '') : ''
-                });
-            }
-        }
-
-        if (questions.length === 0) {
-            alert('有効な問題データが見つかりませんでした。\nCSVのフォーマット（1列目:ID, 2列目:問題文, 3列目:答え）を確認してください。');
+        if (!roomRef) {
+            alert('ルームに接続されていません。再度入室し直してください。');
             return;
         }
 
-        // Firebase データベースへアップロード
-        await window.FB.update(roomRef, {
-            questions: questions,
-            status: 'waiting_config'
-        });
+        const fileInput = document.getElementById('csv-file-input');
+        if (!fileInput.files || fileInput.files.length === 0) {
+            alert('CSVファイルを選択してください。');
+            return;
+        }
 
-        // 画面遷移
-        showScreen('screen-config');
+        const file = fileInput.files[0];
 
-    } catch (error) {
-        console.error('CSV Upload Error:', error);
-        alert('CSVの読み込み中にエラーが発生しました:\n' + error.message);
+        try {
+            const text = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(new Error('ファイルの読み込みに失敗しました。'));
+                reader.readAsText(file, 'UTF-8');
+            });
+
+            const lines = text.split(/\r\n|\n/);
+            const questions = [];
+
+            for (let line of lines) {
+                if (!line.trim()) continue;
+                const cols = line.split(',');
+                if (cols.length >= 3) {
+                    questions.push({
+                        id: parseInt(cols[0].trim()),
+                        question: cols[1].trim().replace(/^"|"$/g, ''),
+                        answer: cols[2].trim().replace(/^"|"$/g, ''),
+                        supplement: cols[3] ? cols[3].trim().replace(/^"|"$/g, '') : ''
+                    });
+                }
+            }
+
+            if (questions.length === 0) {
+                alert('有効な問題データが見つかりませんでした。\nCSVのフォーマット（1列目:ID, 2列目:問題文, 3列目:答え）を確認してください。');
+                return;
+            }
+
+            await window.FB.update(roomRef, {
+                questions: questions,
+                status: 'waiting_config'
+            });
+
+            showScreen('screen-config');
+
+        } catch (error) {
+            console.error('CSV Upload Error:', error);
+            alert('CSVの読み込み中にエラーが発生しました:\n' + error.message);
+        }
     }
-}
 
     async function goToCsvScreen() {
         if (!roomRef) return;
         await window.FB.update(roomRef, { status: 'waiting_csv' });
         showScreen('screen-csv');
+    }
+
+    async function goToConfigScreen() {
+        if (!roomRef) return;
+        if (synth.speaking) synth.cancel();
+        if (readingTimer) clearTimeout(readingTimer);
+        if (resultTimer) clearTimeout(resultTimer);
+        await window.FB.update(roomRef, { status: 'waiting_config' });
     }
 
     async function saveConfigAndStart() {
@@ -587,6 +591,26 @@
     let lastSoundTimestamp = 0;
     let lastGameOverState = false;
 
+    function updateGameLog(data, currentStatus) {
+        let logHtml = '';
+        if (currentStatus) {
+            logHtml += `<div style="margin-bottom: 8px;">${currentStatus}</div>`;
+        }
+        if (data && data.questions) {
+            const readQuestions = data.questions.filter(q => q.id <= data.currentIndex);
+            if (readQuestions.length > 0) {
+                logHtml += `<div style="border-top: 1px solid #475569; padding-top: 6px; margin-top: 6px; font-weight: bold;">【読み上げ済み問題ログ】</div>`;
+                readQuestions.slice().reverse().forEach(q => {
+                    logHtml += `<div style="margin-top: 4px;"><strong>問題 ${q.id}:</strong> ${q.question}<br><span style="color: #4ade80;"><strong>答え:</strong> ${q.answer}</span></div>`;
+                });
+            }
+        }
+        const logBox = document.getElementById('game-log');
+        if (logBox) {
+            logBox.innerHTML = logHtml || 'ゲーム待機中...';
+        }
+    }
+
     function initRoomListener() {
         if (!roomRef) return;
         if (unsubscribeRoom) unsubscribeRoom();
@@ -599,7 +623,6 @@
                 playSound(data.soundEvent.type);
             }
 
-            // ゲームセット判定の監視（全員にポップアップを表示する）
             if (data.status === 'playing' && data.players && data.rule) {
                 let isGameOver = false;
                 for (let key in data.players) {
@@ -609,8 +632,7 @@
                 }
                 if (isGameOver && !lastGameOverState) {
                     lastGameOverState = true;
-                    alert('ゲームセット！ルール設定画面に戻ります。');
-                    window.FB.update(roomRef, { status: 'waiting_config' });
+                    alert('ゲームセット！');
                 } else if (!isGameOver) {
                     lastGameOverState = false;
                 }
@@ -686,7 +708,7 @@
                 document.getElementById('judge-q-display').innerText = `問題: ${q.question}\n答え: ${q.answer}\n補足: ${q.supplement}`;
             } else {
                 document.getElementById('panel-judge').style.display = 'none';
-                document.getElementById('game-log').innerText = `${players[buzzerBy].name} さんが解答ボタンを押しました！ ${players[judgeUser].name} さんが判定中です...`;
+                updateGameLog(data, `${players[buzzerBy].name} さんが解答ボタンを押しました！ ${players[judgeUser].name} さんが判定中です...`);
             }
             document.getElementById('panel-result-view').style.display = 'none';
         } else if (gState === 'result_view') {
@@ -767,13 +789,12 @@
         const q = data.questions.find(item => item.id === data.currentIndex);
         if (!q) {
             alert('すべての問題を終了しました。');
-            if (roomRef) window.FB.update(roomRef, { status: 'waiting_config' });
             return;
         }
 
         let cleanText = q.question.replace(/（.*?）|\(.*?\)/g, '');
 
-        document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
+        updateGameLog(data, `問題 ${q.id} を読み上げています...`);
 
         if (isPaused) return;
 
@@ -785,8 +806,7 @@
                     if (roomRef) await window.FB.update(roomRef, { gameState: 'result_view' });
                     return;
                 }
-                document.getElementById('game-log').innerText =
-                    `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`;
+                updateGameLog(data, `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`);
                 remaining--;
                 readingTimer = setTimeout(tick, 1000);
             };
@@ -858,7 +878,6 @@
         }
 
         if (isGameOver) {
-            await window.FB.update(roomRef, { status: 'waiting_config' });
             return;
         }
 
@@ -893,6 +912,7 @@
     window.joinRoom = joinRoom;
     window.uploadCSV = uploadCSV;
     window.goToCsvScreen = goToCsvScreen;
+    window.goToConfigScreen = goToConfigScreen;
     window.saveConfigAndStart = saveConfigAndStart;
     window.toggleRuleInputs = toggleRuleInputs;
     window.pressBuzzer = pressBuzzer;
