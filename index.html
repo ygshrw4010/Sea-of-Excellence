@@ -705,7 +705,7 @@
 
 // 「問題」のあとに、読点（、）やスペースを使って「間」を調整する
 // 例：読点を2つ重ねる、または全角スペースを入れるなど
-speakWithBestVoice("問題、、、" + cleanText, () => {
+speakWithBestVoice("問題。" + cleanText, () => {
     let remaining = 5;
     const tick = async () => {
         if (isPaused) return;
