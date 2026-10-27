@@ -241,7 +241,7 @@
         }
 
         if (targetSound) {
-            targetSound.currentTime = 0; // 先頭に戻して再生
+            targetSound.currentTime = 0;
             targetSound.play().catch(e => {
                 console.warn("音声の再生がブロックされました:", e);
             });
@@ -630,4 +630,215 @@
                 lastProcessedIndex = data.currentIndex;
                 startReadingQuestion(data);
             }
-        } else if (gState === 'buzzer
+        } else if (gState === 'buzzer_hit') {
+            if (resultTimer) {
+                clearTimeout(resultTimer);
+                resultTimer = null;
+            }
+            document.getElementById('panel-playing').style.display = 'none';
+            
+            let judgeUser = getJudgeUser(buzzerBy, Object.keys(players).length);
+            
+            if (myRole === judgeUser) {
+                document.getElementById('panel-judge').style.display = 'block';
+                document.getElementById('judge-target-name').innerText = players[buzzerBy].name;
+                const q = data.questions.find(item => item.id === data.currentIndex);
+                document.getElementById('judge-q-display').innerText = `問題: ${q.question}\n答え: ${q.answer}\n補足: ${q.supplement}`;
+            } else {
+                document.getElementById('panel-judge').style.display = 'none';
+                document.getElementById('game-log').innerText = `${players[buzzerBy].name} さんが解答ボタンを押しました！ ${players[judgeUser].name} さんが判定中です...`;
+            }
+            document.getElementById('panel-result-view').style.display = 'none';
+        } else if (gState === 'result_view') {
+            document.getElementById('panel-playing').style.display = 'none';
+            document.getElementById('panel-judge').style.display = 'none';
+            document.getElementById('panel-result-view').style.display = 'block';
+
+            const q = data.questions.find(item => item.id === data.currentIndex);
+            document.getElementById('result-view-content').innerHTML = `
+                <p><strong>問題${q.id}:</strong> ${q.question}</p>
+                <p><strong>答え:</strong> ${q.answer}</p>
+                <p><strong>補足:</strong> ${q.supplement}</p>
+            `;
+
+            if (myRole === 'A' && !resultTimer) {
+                startResultCountdown(data);
+            }
+        }
+    }
+
+    function startResultCountdown(data) {
+        let timeLeft = 5;
+        const updateTitle = () => {
+            const titleElem = document.getElementById('result-countdown-title');
+            if (titleElem) {
+                titleElem.innerText = `問題結果確認（${timeLeft}秒後に次の問題へ）`;
+            }
+        };
+        updateTitle();
+
+        const tick = async () => {
+            if (isPaused) {
+                resultTimer = setTimeout(tick, 1000);
+                return;
+            }
+            timeLeft--;
+            if (timeLeft > 0) {
+                updateTitle();
+                resultTimer = setTimeout(tick, 1000);
+            } else {
+                resultTimer = null;
+                await nextQuestion(data);
+            }
+        };
+        resultTimer = setTimeout(tick, 1000);
+    }
+
+    function getJudgeUser(buzzerBy, playerCount) {
+        if (playerCount === 2) {
+            return buzzerBy === 'A' ? 'B' : 'A';
+        } else {
+            if (buzzerBy === 'A') return 'B';
+            if (buzzerBy === 'B') return 'C';
+            if (buzzerBy === 'C') return 'A';
+        }
+        return 'A';
+    }
+
+    function startReadingQuestion(data) {
+        if (synth.speaking) synth.cancel();
+        const q = data.questions.find(item => item.id === data.currentIndex);
+        if (!q) {
+            alert('すべての問題を終了しました。');
+            window.FB.update(roomRef, { status: 'waiting_config' });
+            return;
+        }
+
+        let cleanText = q.question.replace(/（.*?）|\(.*?\)/g, '');
+
+        document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
+
+        speakWithBestVoice("問題", () => {
+            if (isPaused) return;
+            speakWithBestVoice(cleanText, () => {
+                let remaining = 5;
+                const tick = async () => {
+                    if (isPaused) return;
+                    if (remaining <= 0) {
+                        if (myRole === 'A') {
+                            await window.FB.update(roomRef, { gameState: 'result_view' });
+                        }
+                        return;
+                    }
+                    document.getElementById('game-log').innerText =
+                        `誰も解答しませんでした。結果表示まで あと ${remaining} 秒...`;
+                    remaining--;
+                    readingTimer = setTimeout(tick, 1000);
+                };
+                tick();
+            });
+        });
+    }
+
+    async function pressBuzzer() {
+        const snapshot = await window.FB.get(roomRef);
+        const data = snapshot.val();
+        if (data.gameState !== 'reading' || data.buzzerPressedBy) return;
+
+        if (synth.speaking) synth.cancel();
+        if (readingTimer) clearTimeout(readingTimer);
+        playSound(1);
+
+        await window.FB.update(roomRef, {
+            buzzerPressedBy: myRole,
+            gameState: 'buzzer_hit'
+        });
+    }
+
+    async function judgeAnswer(isCorrect) {
+        if (myRole !== getJudgeUser((await window.FB.get(window.FB.child(roomRef, 'buzzerPressedBy'))).val(), 3)) return;
+
+        const snapshot = await window.FB.get(roomRef);
+        const data = snapshot.val();
+        const buzzerBy = data.buzzerPressedBy;
+        const players = data.players;
+        const p = players[buzzerBy];
+        const rule = data.rule;
+
+        if (isCorrect) {
+            playSound(2);
+            p.maru += 1;
+            if (rule.type.includes('marubatsu')) {
+                if (p.maru >= rule.n) p.status = 'winner';
+            }
+        } else {
+            playSound(3);
+            p.batsu += 1;
+            if (rule.type.includes('marubatsu')) {
+                if (p.batsu >= rule.m) p.status = 'loser';
+            }
+        }
+
+        await window.FB.update(roomRef, {
+            players: players,
+            gameState: 'result_view'
+        });
+    }
+
+    async function nextQuestion(data) {
+        const players = data.players;
+        const rule = data.rule;
+
+        let isGameOver = false;
+        for (let key in players) {
+            if (rule.type.includes('marubatsu') && (players[key].maru >= rule.n || players[key].batsu >= rule.m)) {
+                isGameOver = true;
+            }
+        }
+
+        if (isGameOver) {
+            alert('ゲームセット！ルール設定画面に戻ります。');
+            await window.FB.update(roomRef, { status: 'waiting_config' });
+            return;
+        }
+
+        await window.FB.update(roomRef, {
+            currentIndex: data.currentIndex + 1,
+            buzzerPressedBy: null,
+            gameState: 'reading'
+        });
+    }
+
+    async function togglePause() {
+        const snapshot = await window.FB.get(window.FB.child(roomRef, 'paused'));
+        const currentPaused = snapshot.val();
+        await window.FB.update(roomRef, { paused: !currentPaused });
+        if (!currentPaused) {
+            if (synth.speaking) synth.cancel();
+            if (readingTimer) clearTimeout(readingTimer);
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && document.getElementById('screen-game').classList.contains('active')) {
+            const btn = document.getElementById('buzzer-btn');
+            if (btn && btn.offsetParent !== null) {
+                pressBuzzer();
+            }
+        }
+    });
+
+    // --- グローバル関数登録（Uncaught ReferenceError 対策） ---
+    window.createRoom = createRoom;
+    window.joinRoom = joinRoom;
+    window.uploadCSV = uploadCSV;
+    window.goToCsvScreen = goToCsvScreen;
+    window.saveConfigAndStart = saveConfigAndStart;
+    window.toggleRuleInputs = toggleRuleInputs;
+    window.pressBuzzer = pressBuzzer;
+    window.judgeAnswer = judgeAnswer;
+    window.togglePause = togglePause;
+</script>
+
+</body>
+</html>
