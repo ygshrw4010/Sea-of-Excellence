@@ -614,6 +614,9 @@
                 startReadingQuestion(data);
             }
         } else if (gState === 'buzzer_hit') {
+            if (synth.speaking) synth.cancel();
+            if (readingTimer) clearTimeout(readingTimer);
+
             if (resultTimer) {
                 clearTimeout(resultTimer);
                 resultTimer = null;
@@ -633,6 +636,9 @@
             }
             document.getElementById('panel-result-view').style.display = 'none';
         } else if (gState === 'result_view') {
+            if (synth.speaking) synth.cancel();
+            if (readingTimer) clearTimeout(readingTimer);
+
             document.getElementById('panel-playing').style.display = 'none';
             document.getElementById('panel-judge').style.display = 'none';
             document.getElementById('panel-result-view').style.display = 'block';
