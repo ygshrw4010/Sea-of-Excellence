@@ -580,6 +580,7 @@
         await window.FB.update(roomRef, {
             rule: { type: ruleType, n, m, p, q },
             currentIndex: startIndex,
+            startIndex: startIndex,
             players: players,
             status: 'playing',
             gameState: 'reading',
@@ -597,8 +598,9 @@
             logHtml += `<div style="margin-bottom: 8px;">${currentStatus}</div>`;
         }
         if (data && data.questions) {
-            // 読み上げ・正误判定が完了した（現在の問題番号より前の）問題のみログに表示
-            const readQuestions = data.questions.filter(q => q.id < data.currentIndex);
+            const startIdx = data.startIndex || 1;
+            // ゲーム開始時の問題番号(startIdx)以上、かつ現在進行中の問題番号(currentIndex)未満の判定完了済み問題のみ表示
+            const readQuestions = data.questions.filter(q => q.id >= startIdx && q.id < data.currentIndex);
             if (readQuestions.length > 0) {
                 logHtml += `<div style="border-top: 1px solid #475569; padding-top: 6px; margin-top: 6px; font-weight: bold;">【読み上げ済み問題ログ】</div>`;
                 readQuestions.slice().reverse().forEach(q => {
