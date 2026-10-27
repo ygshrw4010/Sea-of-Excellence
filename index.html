@@ -558,11 +558,18 @@
         });
     }
 
+    let lastSoundTimestamp = 0;
+
     function initRoomListener() {
         if (unsubscribeRoom) unsubscribeRoom();
         unsubscribeRoom = window.FB.onValue(roomRef, (snapshot) => {
             if (!snapshot.exists()) return;
             const data = snapshot.val();
+
+            if (data.soundEvent && data.soundEvent.timestamp > lastSoundTimestamp) {
+                lastSoundTimestamp = data.soundEvent.timestamp;
+                playSound(data.soundEvent.type);
+            }
 
             if (data.status === 'waiting_csv') {
                 showScreen('screen-csv');
@@ -737,11 +744,11 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
 
         if (synth.speaking) synth.cancel();
         if (readingTimer) clearTimeout(readingTimer);
-        playSound(1);
 
         await window.FB.update(roomRef, {
             buzzerPressedBy: myRole,
-            gameState: 'buzzer_hit'
+            gameState: 'buzzer_hit',
+            soundEvent: { type: 1, timestamp: Date.now() }
         });
     }
 
@@ -756,13 +763,11 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
         const rule = data.rule;
 
         if (isCorrect) {
-            playSound(2);
             p.maru += 1;
             if (rule.type.includes('marubatsu')) {
                 if (p.maru >= rule.n) p.status = 'winner';
             }
         } else {
-            playSound(3);
             p.batsu += 1;
             if (rule.type.includes('marubatsu')) {
                 if (p.batsu >= rule.m) p.status = 'loser';
@@ -771,7 +776,8 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
 
         await window.FB.update(roomRef, {
             players: players,
-            gameState: 'result_view'
+            gameState: 'result_view',
+            soundEvent: { type: isCorrect ? 2 : 3, timestamp: Date.now() }
         });
     }
 
