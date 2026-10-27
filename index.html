@@ -167,19 +167,19 @@
         <div id="rule-params">
             <div class="param-group" id="group-n">
                 <label>n (正解数 / 勝利点 / 持ち点):</label>
-                <input type="number" id="param-n" value="3" min="1">
+                <input type="number" id="param-n" value="1" min="1">
             </div>
             <div class="param-group" id="group-m">
                 <label>m (不正解数 / 減点数 / 失格点):</label>
-                <input type="number" id="param-m" value="2" min="1">
+                <input type="number" id="param-m" value="1" min="1">
             </div>
             <div class="param-group" id="group-p" style="display:none;">
                 <label>p (勝ち抜け点):</label>
-                <input type="number" id="param-p" value="10" min="1">
+                <input type="number" id="param-p" value="1" min="1">
             </div>
             <div class="param-group" id="group-q" style="display:none;">
                 <label>q (失格点):</label>
-                <input type="number" id="param-q" value="-5">
+                <input type="number" id="param-q" value="1">
             </div>
         </div>
 
@@ -216,9 +216,9 @@
             <button onclick="judgeAnswer(false)" class="danger" style="font-size: 1.2rem;">不正解 (効果音3)</button>
         </div>
 
-        <!-- 正解・不正解後の確認表示パネル (5秒間表示) -->
+        <!-- 正解・不正解後の確認表示パネル (秒数カウントダウン表示) -->
         <div id="panel-result-view" style="display:none; background:#e2e8f0; padding:15px; border-radius:8px;">
-            <h3>問題結果確認（5秒後に次の問題へ）</h3>
+            <h3 id="result-countdown-title">問題結果確認（5秒後に次の問題へ）</h3>
             <div id="result-view-content"></div>
         </div>
     </div>
@@ -228,7 +228,7 @@
 <script>
     // 提供された音声データのURL（Object URL または 相対/絶対パス）
     // ※ 同じフォルダに配置する場合はファイル名に変更してください
-    const sound1 = new Audio('botun.mp3'); //[cite: 2]
+    const sound1 = new Audio('botun.mp3'); //
     const sound2 = new Audio('correct.mp3');       //
     const sound3 = new Audio('incorrect.mp3');     //
 
@@ -262,6 +262,7 @@
     let synth = window.speechSynthesis;
     let currentUtterance = null;
     let readingTimer = null;
+    let resultTimer = null;
     let isPaused = false;
 
     // ご指定の高品質な日本語音声を選択して読み上げる関数
@@ -391,8 +392,27 @@
 
     function toggleRuleInputs() {
         const rule = document.getElementById('config-rule-type').value;
-        document.getElementById('group-p').style.display = (rule === 'plus_minus') ? 'block' : 'none';
-        document.getElementById('group-q').style.display = (rule === 'plus_minus') ? 'block' : 'none';
+        const groupN = document.getElementById('group-n');
+        const groupM = document.getElementById('group-m');
+        const groupP = document.getElementById('group-p');
+        const groupQ = document.getElementById('group-q');
+
+        if (rule === 'n_by_n' || rule === 'attack_survival') {
+            groupN.style.display = 'block';
+            groupM.style.display = 'none';
+            groupP.style.display = 'none';
+            groupQ.style.display = 'none';
+        } else if (rule === 'plus_minus') {
+            groupN.style.display = 'block';
+            groupM.style.display = 'block';
+            groupP.style.display = 'block';
+            groupQ.style.display = 'block';
+        } else {
+            groupN.style.display = 'block';
+            groupM.style.display = 'block';
+            groupP.style.display = 'none';
+            groupQ.style.display = 'none';
+        }
     }
 
     async function createRoom() {
@@ -522,8 +542,8 @@
             status: 'waiting_config'
         });
 
+        alert('CSVのアップロードが完了しました！');
         showScreen('screen-config');
-        alert('CSVのアップロードが完了しました！ルールを設定してください。');
     }
 
     function goToCsvScreen() {
@@ -604,6 +624,10 @@
         const buzzerBy = data.buzzerPressedBy;
 
         if (gState === 'reading') {
+            if (resultTimer) {
+                clearTimeout(resultTimer);
+                resultTimer = null;
+            }
             document.getElementById('panel-playing').style.display = 'block';
             document.getElementById('panel-judge').style.display = 'none';
             document.getElementById('panel-result-view').style.display = 'none';
@@ -613,6 +637,10 @@
                 startReadingQuestion(data);
             }
         } else if (gState === 'buzzer_hit') {
+            if (resultTimer) {
+                clearTimeout(resultTimer);
+                resultTimer = null;
+            }
             document.getElementById('panel-playing').style.display = 'none';
             
             let judgeUser = getJudgeUser(buzzerBy, Object.keys(players).length);
@@ -638,7 +666,38 @@
                 <p><strong>答え:</strong> ${q.answer}</p>
                 <p><strong>補足:</strong> ${q.supplement}</p>
             `;
+
+            if (myRole === 'A' && !resultTimer) {
+                startResultCountdown(data);
+            }
         }
+    }
+
+    function startResultCountdown(data) {
+        let timeLeft = 5;
+        const updateTitle = () => {
+            const titleElem = document.getElementById('result-countdown-title');
+            if (titleElem) {
+                titleElem.innerText = `問題結果確認（${timeLeft}秒後に次の問題へ）`;
+            }
+        };
+        updateTitle();
+
+        const tick = async () => {
+            if (isPaused) {
+                resultTimer = setTimeout(tick, 1000);
+                return;
+            }
+            timeLeft--;
+            if (timeLeft > 0) {
+                updateTitle();
+                resultTimer = setTimeout(tick, 1000);
+            } else {
+                resultTimer = null;
+                await nextQuestion(data);
+            }
+        };
+        resultTimer = setTimeout(tick, 1000);
     }
 
     function getJudgeUser(buzzerBy, playerCount) {
@@ -665,7 +724,7 @@
 
         document.getElementById('game-log').innerText = `問題 ${q.id} を読み上げています...`;
 
-        speakWithBestVoice("問題。", () => {
+        speakWithBestVoice("問題", () => {
             setTimeout(() => {
                 if (isPaused) return;
                 speakWithBestVoice(cleanText, () => {
@@ -675,9 +734,6 @@
                         if (remaining <= 0) {
                             if (myRole === 'A') {
                                 await window.FB.update(roomRef, { gameState: 'result_view' });
-                                setTimeout(async () => {
-                                    await nextQuestion(data);
-                                }, 5000);
                             }
                             return;
                         }
@@ -688,7 +744,7 @@
                     };
                     tick();
                 });
-            }, 50);
+            }, 10);
         });
     }
 
@@ -735,12 +791,6 @@
             players: players,
             gameState: 'result_view'
         });
-
-        if (myRole === 'A') {
-            setTimeout(async () => {
-                await nextQuestion(data);
-            }, 5000);
-        }
     }
 
     async function nextQuestion(data) {
