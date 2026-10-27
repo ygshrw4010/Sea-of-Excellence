@@ -597,10 +597,20 @@
         if (currentStatus) {
             logHtml += `<div style="margin-bottom: 8px;">${currentStatus}</div>`;
         }
-        if (data && data.questions) {
-            const startIdx = data.startIndex || 1;
-            // ゲーム開始時の問題番号(startIdx)以上、かつ現在進行中の問題番号(currentIndex)未満の判定完了済み問題のみ表示
-            const readQuestions = data.questions.filter(q => q.id >= startIdx && q.id < data.currentIndex);
+        if (data && data.questions && data.questions.length > 0) {
+            const startIdx = Number(data.startIndex) || 1;
+            const currentIdx = Number(data.currentIndex) || 1;
+
+            // 配列内での「開始問題」と「現在問題」のインデックス位置を取得
+            const startIdxInArray = data.questions.findIndex(q => Number(q.id) === startIdx);
+            const currentIdxInArray = data.questions.findIndex(q => Number(q.id) === currentIdx);
+
+            const validStart = startIdxInArray !== -1 ? startIdxInArray : 0;
+            const validCurrent = currentIdxInArray !== -1 ? currentIdxInArray : data.questions.length;
+
+            // 開始問題の位置以上、かつ【現在読んでいる問題の位置より前】の完了済み問題のみ抽出
+            const readQuestions = data.questions.filter((q, index) => index >= validStart && index < validCurrent);
+
             if (readQuestions.length > 0) {
                 logHtml += `<div style="border-top: 1px solid #475569; padding-top: 6px; margin-top: 6px; font-weight: bold;">【読み上げ済み問題ログ】</div>`;
                 readQuestions.slice().reverse().forEach(q => {
