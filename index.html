@@ -597,7 +597,8 @@
             logHtml += `<div style="margin-bottom: 8px;">${currentStatus}</div>`;
         }
         if (data && data.questions) {
-            const readQuestions = data.questions.filter(q => q.id <= data.currentIndex);
+            // 読み上げ・正误判定が完了した（現在の問題番号より前の）問題のみログに表示
+            const readQuestions = data.questions.filter(q => q.id < data.currentIndex);
             if (readQuestions.length > 0) {
                 logHtml += `<div style="border-top: 1px solid #475569; padding-top: 6px; margin-top: 6px; font-weight: bold;">【読み上げ済み問題ログ】</div>`;
                 readQuestions.slice().reverse().forEach(q => {
@@ -685,6 +686,8 @@
             document.getElementById('panel-judge').style.display = 'none';
             document.getElementById('panel-result-view').style.display = 'none';
 
+            updateGameLog(data, `問題 ${data.currentIndex} を読み上げています...`);
+
             if (data.currentIndex !== lastProcessedIndex && !isPaused) {
                 lastProcessedIndex = data.currentIndex;
                 startReadingQuestion(data);
@@ -700,6 +703,7 @@
             document.getElementById('panel-playing').style.display = 'none';
             
             let judgeUser = getJudgeUser(buzzerBy, Object.keys(players).length);
+            const statusMsg = `${players[buzzerBy] ? players[buzzerBy].name : ''} さんが解答ボタンを押しました！ ${players[judgeUser] ? players[judgeUser].name : ''} さんが判定中です...`;
             
             if (myRole === judgeUser) {
                 document.getElementById('panel-judge').style.display = 'block';
@@ -708,9 +712,9 @@
                 document.getElementById('judge-q-display').innerText = `問題: ${q.question}\n答え: ${q.answer}\n補足: ${q.supplement}`;
             } else {
                 document.getElementById('panel-judge').style.display = 'none';
-                updateGameLog(data, `${players[buzzerBy].name} さんが解答ボタンを押しました！ ${players[judgeUser].name} さんが判定中です...`);
             }
             document.getElementById('panel-result-view').style.display = 'none';
+            updateGameLog(data, statusMsg);
         } else if (gState === 'result_view') {
             if (synth.speaking) synth.cancel();
             if (readingTimer) clearTimeout(readingTimer);
@@ -718,6 +722,8 @@
             document.getElementById('panel-playing').style.display = 'none';
             document.getElementById('panel-judge').style.display = 'none';
             document.getElementById('panel-result-view').style.display = 'block';
+
+            updateGameLog(data, `問題 ${data.currentIndex} の結果を確認中...`);
 
             const q = data.questions.find(item => item.id === data.currentIndex);
             if (q) {
