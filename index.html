@@ -524,13 +524,12 @@
         showScreen('screen-config');
     }
 
-    function goToCsvScreen() {
-        window.FB.update(roomRef, { status: 'waiting_csv' });
+    async function goToCsvScreen() {
+        await window.FB.update(roomRef, { status: 'waiting_csv' });
         showScreen('screen-csv');
     }
 
     async function saveConfigAndStart() {
-        if (myRole !== 'A') return;
         const ruleType = document.getElementById('config-rule-type').value;
         const n = parseInt(document.getElementById('param-n').value) || 0;
         const m = parseInt(document.getElementById('param-m').value) || 0;
@@ -583,9 +582,7 @@
                 if (isGameOver && !lastGameOverState) {
                     lastGameOverState = true;
                     alert('ゲームセット！ルール設定画面に戻ります。');
-                    if (myRole === 'A') {
-                        window.FB.update(roomRef, { status: 'waiting_config' });
-                    }
+                    window.FB.update(roomRef, { status: 'waiting_config' });
                 } else if (!isGameOver) {
                     lastGameOverState = false;
                 }
@@ -679,7 +676,8 @@
                 <p><strong>補足:</strong> ${q.supplement}</p>
             `;
 
-            if (myRole === 'A' && !resultTimer) {
+            // 誰でもカウントダウン（次の問題への進行）を処理できるように修正
+            if (!resultTimer) {
                 startResultCountdown(data);
             }
         }
@@ -756,9 +754,7 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
     const tick = async () => {
         if (isPaused) return;
         if (remaining <= 0) {
-            if (myRole === 'A') {
-                await window.FB.update(roomRef, { gameState: 'result_view' });
-            }
+            await window.FB.update(roomRef, { gameState: 'result_view' });
             return;
         }
         document.getElementById('game-log').innerText =
@@ -815,8 +811,10 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
     }
 
     async function nextQuestion(data) {
-        const players = data.players;
-        const rule = data.rule;
+        const snapshot = await window.FB.get(roomRef);
+        const currentData = snapshot.val();
+        const players = currentData.players;
+        const rule = currentData.rule;
 
         let isGameOver = false;
         for (let key in players) {
@@ -826,14 +824,12 @@ speakWithBestVoice("問題、、、、、、、、、、" + cleanText, () => {
         }
 
         if (isGameOver) {
-            if (myRole === 'A') {
-                await window.FB.update(roomRef, { status: 'waiting_config' });
-            }
+            await window.FB.update(roomRef, { status: 'waiting_config' });
             return;
         }
 
         await window.FB.update(roomRef, {
-            currentIndex: data.currentIndex + 1,
+            currentIndex: currentData.currentIndex + 1,
             buzzerPressedBy: null,
             gameState: 'reading'
         });
