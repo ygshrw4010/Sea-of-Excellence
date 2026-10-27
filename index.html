@@ -487,6 +487,10 @@
     }
 
     async function uploadCSV() {
+        if (!roomRef) {
+            alert('ルームに接続されていません。');
+            return;
+        }
         const fileInput = document.getElementById('csv-file-input');
         if (fileInput.files.length === 0) {
             alert('CSVファイルを選択してください。');
@@ -525,11 +529,13 @@
     }
 
     async function goToCsvScreen() {
+        if (!roomRef) return;
         await window.FB.update(roomRef, { status: 'waiting_csv' });
         showScreen('screen-csv');
     }
 
     async function saveConfigAndStart() {
+        if (!roomRef) return;
         const ruleType = document.getElementById('config-rule-type').value;
         const n = parseInt(document.getElementById('param-n').value) || 0;
         const m = parseInt(document.getElementById('param-m').value) || 0;
@@ -538,7 +544,7 @@
         const startIndex = parseInt(document.getElementById('config-start-index').value) || 1;
 
         const snapshot = await window.FB.get(window.FB.child(roomRef, 'players'));
-        const players = snapshot.val();
+        const players = snapshot.val() || {};
         for (let key in players) {
             players[key].maru = 0;
             players[key].batsu = 0;
@@ -561,6 +567,7 @@
     let lastGameOverState = false;
 
     function initRoomListener() {
+        if (!roomRef) return;
         if (unsubscribeRoom) unsubscribeRoom();
         unsubscribeRoom = window.FB.onValue(roomRef, (snapshot) => {
             if (!snapshot.exists()) return;
@@ -670,11 +677,13 @@
             document.getElementById('panel-result-view').style.display = 'block';
 
             const q = data.questions.find(item => item.id === data.currentIndex);
-            document.getElementById('result-view-content').innerHTML = `
-                <p><strong>問題${q.id}:</strong> ${q.question}</p>
-                <p><strong>答え:</strong> ${q.answer}</p>
-                <p><strong>補足:</strong> ${q.supplement}</p>
-            `;
+            if (q) {
+                document.getElementById('result-view-content').innerHTML = `
+                    <p><strong>問題${q.id}:</strong> ${q.question}</p>
+                    <p><strong>答え:</strong> ${q.answer}</p>
+                    <p><strong>補足:</strong> ${q.supplement}</p>
+                `;
+            }
 
             if (!resultTimer) {
                 startResultCountdown(data);
@@ -683,6 +692,7 @@
     }
 
     async function changeScore(playerKey, field, delta) {
+        if (!roomRef) return;
         const snapshot = await window.FB.get(roomRef);
         if (!snapshot.exists()) return;
         const data = snapshot.val();
@@ -736,7 +746,7 @@
         const q = data.questions.find(item => item.id === data.currentIndex);
         if (!q) {
             alert('すべての問題を終了しました。');
-            window.FB.update(roomRef, { status: 'waiting_config' });
+            if (roomRef) window.FB.update(roomRef, { status: 'waiting_config' });
             return;
         }
 
@@ -751,7 +761,7 @@
             const tick = async () => {
                 if (isPaused) return;
                 if (remaining <= 0) {
-                    await window.FB.update(roomRef, { gameState: 'result_view' });
+                    if (roomRef) await window.FB.update(roomRef, { gameState: 'result_view' });
                     return;
                 }
                 document.getElementById('game-log').innerText =
@@ -764,9 +774,10 @@
     }
 
     async function pressBuzzer() {
+        if (!roomRef) return;
         const snapshot = await window.FB.get(roomRef);
         const data = snapshot.val();
-        if (data.gameState !== 'reading' || data.buzzerPressedBy) return;
+        if (!data || data.gameState !== 'reading' || data.buzzerPressedBy) return;
 
         if (synth.speaking) synth.cancel();
         if (readingTimer) clearTimeout(readingTimer);
@@ -779,11 +790,14 @@
     }
 
     async function judgeAnswer(isCorrect) {
-        if (myRole !== getJudgeUser((await window.FB.get(window.FB.child(roomRef, 'buzzerPressedBy'))).val(), 3)) return;
-
+        if (!roomRef) return;
         const snapshot = await window.FB.get(roomRef);
+        if (!snapshot.exists()) return;
         const data = snapshot.val();
         const buzzerBy = data.buzzerPressedBy;
+        
+        if (myRole !== getJudgeUser(buzzerBy, Object.keys(data.players || {}).length)) return;
+
         const players = data.players;
         const p = players[buzzerBy];
         const rule = data.rule;
@@ -808,7 +822,9 @@
     }
 
     async function nextQuestion(data) {
+        if (!roomRef) return;
         const snapshot = await window.FB.get(roomRef);
+        if (!snapshot.exists()) return;
         const currentData = snapshot.val();
         const players = currentData.players;
         const rule = currentData.rule;
@@ -833,6 +849,7 @@
     }
 
     async function togglePause() {
+        if (!roomRef) return;
         const snapshot = await window.FB.get(window.FB.child(roomRef, 'paused'));
         const currentPaused = snapshot.val();
         await window.FB.update(roomRef, { paused: !currentPaused });
