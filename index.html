@@ -419,7 +419,9 @@
             return;
         }
 
-        window.FB.onDisconnect(roomRef).remove();
+        // 開設者が切断した場合はプレイヤーAのデータのみ削除（部屋全体消滅を防止）
+        const playerARef = window.FB.child(roomRef, 'players/A');
+        window.FB.onDisconnect(playerARef).remove();
 
         await window.FB.set(roomRef, {
             password: rPass,
@@ -432,7 +434,6 @@
             paused: false
         });
 
-        showScreen('screen-csv');
         initRoomListener();
     }
 
@@ -462,20 +463,39 @@
         }
 
         const players = roomData.players || {};
-        const count = Object.keys(players).length;
 
-        if (count >= 3) {
-            alert('定員（開設者除き2人、計3人）に達しています。');
-            return;
+        // すでに同じ名前で参加している場合は既存の枠（A/B/C）を再利用して再入室を許可
+        let existingRole = null;
+        for (let key in players) {
+            if (players[key].name === myName) {
+                existingRole = key;
+                break;
+            }
         }
 
-        myRole = count === 1 ? 'B' : 'C';
+        if (existingRole) {
+            myRole = existingRole;
+        } else {
+            // 空いている役職（B または C）を割り当て
+            if (!players['B']) {
+                myRole = 'B';
+            } else if (!players['C']) {
+                myRole = 'C';
+            } else {
+                alert('定員（開設者除き2人、計3人）に達しています。');
+                return;
+            }
 
-        players[myRole] = { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' };
-        await window.FB.update(roomRef, { players });
+            players[myRole] = { name: myName, maru: 0, batsu: 0, score: 0, status: 'playing' };
+            await window.FB.update(roomRef, { players });
+        }
 
+        // 離脱時の自動クリーンアップ設定
+        const myPlayerRef = window.FB.child(roomRef, 'players/' + myRole);
+        window.FB.onDisconnect(myPlayerRef).remove();
+
+        // リアルタイム同期を開始（画面切り替えは onValue 内で自動実行）
         initRoomListener();
-        checkRoomStatus(roomData);
     }
 
     function checkRoomStatus(data) {
@@ -605,7 +625,16 @@
                 }
             }
         } else if (rule.type === 'attack_survival') {
-            const activePlayers = Object.keys(players).filter(key => (players[key].score || 0) > 0);
+            const playerKeys = Object.keys(players);
+            if (playerKeys.length <= 1) return false;
+
+            // 残りスコアが1以上のプレイヤー（生存者）をカウント
+            const activePlayers = playerKeys.filter(key => {
+                const p = players[key];
+                return p.status !== 'loser' && Number(p.score || 0) > 0;
+            });
+
+            // 生存者が1人以下になったらゲームセット
             if (activePlayers.length <= 1) {
                 return true;
             }
@@ -928,13 +957,6 @@
                 }
             }
         }
-
-        await window.FB.update(roomRef, {
-            players: players,
-            gameState: 'result_view',
-            soundEvent: { type: isCorrect ? 2 : 3, timestamp: Date.now() }
-        });
-    }
 
         await window.FB.update(roomRef, {
             players: players,
