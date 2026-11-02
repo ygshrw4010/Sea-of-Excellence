@@ -573,7 +573,8 @@
         for (let key in players) {
             players[key].maru = 0;
             players[key].batsu = 0;
-            players[key].score = (ruleType === 'plus_minus' || ruleType === 'n_by_n' || ruleType === 'attack_survival') ? (ruleType === 'attack_survival' ? n : 0) : 0;
+            // アタックサバイバルの場合は持ち点 n、それ以外は 0 をセット
+            players[key].score = (ruleType === 'attack_survival') ? n : 0;
             players[key].status = 'playing';
         }
 
@@ -880,16 +881,29 @@
         const p = players[buzzerBy];
         const rule = data.rule;
 
+        // 各プレイヤーのスコア・正誤数を確実に数値型に変換
+        for (let key in players) {
+            players[key].maru = Number(players[key].maru || 0);
+            players[key].batsu = Number(players[key].batsu || 0);
+            players[key].score = Number(players[key].score || 0);
+            if (!players[key].status) players[key].status = 'playing';
+        }
+
         if (isCorrect) {
             p.maru += 1;
             if (rule.type.includes('marubatsu')) {
                 if (p.maru >= rule.n) p.status = 'winner';
+            } else if (rule.type === 'plus_minus') {
+                p.score += rule.n;
+                if (p.score >= rule.p) p.status = 'winner';
+            } else if (rule.type === 'n_by_n') {
+                p.score += rule.n;
             } else if (rule.type === 'attack_survival') {
+                // 正解時：自分以外のプレイ中プレイヤー全員の持ち点を1減点
                 for (let key in players) {
                     if (key !== buzzerBy && players[key].status === 'playing') {
-                        players[key].score -= 1;
+                        players[key].score = Math.max(0, players[key].score - 1);
                         if (players[key].score <= 0) {
-                            players[key].score = 0;
                             players[key].status = 'loser';
                         }
                     }
@@ -899,16 +913,28 @@
             p.batsu += 1;
             if (rule.type.includes('marubatsu')) {
                 if (p.batsu >= rule.m) p.status = 'loser';
+            } else if (rule.type === 'plus_minus') {
+                p.score -= rule.m;
+                if (p.score <= rule.q) p.status = 'loser';
+            } else if (rule.type === 'n_by_n') {
+                p.score -= rule.m;
             } else if (rule.type === 'attack_survival') {
+                // 不正解時：自分の持ち点を2減点
                 if (p.status === 'playing') {
-                    p.score -= 2;
+                    p.score = Math.max(0, p.score - 2);
                     if (p.score <= 0) {
-                        p.score = 0;
                         p.status = 'loser';
                     }
                 }
             }
         }
+
+        await window.FB.update(roomRef, {
+            players: players,
+            gameState: 'result_view',
+            soundEvent: { type: isCorrect ? 2 : 3, timestamp: Date.now() }
+        });
+    }
 
         await window.FB.update(roomRef, {
             players: players,
