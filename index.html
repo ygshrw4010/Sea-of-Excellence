@@ -419,7 +419,6 @@
             return;
         }
 
-        // 開設者が切断した場合はプレイヤーAのデータのみ削除（部屋全体消滅を防止）
         const playerARef = window.FB.child(roomRef, 'players/A');
         window.FB.onDisconnect(playerARef).remove();
 
@@ -464,7 +463,6 @@
 
         const players = roomData.players || {};
 
-        // すでに同じ名前で参加している場合は既存の枠（A/B/C）を再利用して再入室を許可
         let existingRole = null;
         for (let key in players) {
             if (players[key].name === myName) {
@@ -476,7 +474,6 @@
         if (existingRole) {
             myRole = existingRole;
         } else {
-            // 空いている役職（B または C）を割り当て
             if (!players['B']) {
                 myRole = 'B';
             } else if (!players['C']) {
@@ -490,11 +487,9 @@
             await window.FB.update(roomRef, { players });
         }
 
-        // 離脱時の自動クリーンアップ設定
         const myPlayerRef = window.FB.child(roomRef, 'players/' + myRole);
         window.FB.onDisconnect(myPlayerRef).remove();
 
-        // リアルタイム同期を開始（画面切り替えは onValue 内で自動実行）
         initRoomListener();
     }
 
@@ -593,7 +588,6 @@
         for (let key in players) {
             players[key].maru = 0;
             players[key].batsu = 0;
-            // アタックサバイバルの場合は持ち点 n、それ以外は 0 をセット
             players[key].score = (ruleType === 'attack_survival') ? n : 0;
             players[key].status = 'playing';
         }
@@ -628,13 +622,11 @@
             const playerKeys = Object.keys(players);
             if (playerKeys.length <= 1) return false;
 
-            // 残りスコアが1以上のプレイヤー（生存者）をカウント
             const activePlayers = playerKeys.filter(key => {
                 const p = players[key];
                 return p.status !== 'loser' && Number(p.score || 0) > 0;
             });
 
-            // 生存者が1人以下になったらゲームセット
             if (activePlayers.length <= 1) {
                 return true;
             }
@@ -910,7 +902,6 @@
         const p = players[buzzerBy];
         const rule = data.rule;
 
-        // 各プレイヤーのスコア・正誤数を確実に数値型に変換
         for (let key in players) {
             players[key].maru = Number(players[key].maru || 0);
             players[key].batsu = Number(players[key].batsu || 0);
@@ -928,7 +919,6 @@
             } else if (rule.type === 'n_by_n') {
                 p.score += rule.n;
             } else if (rule.type === 'attack_survival') {
-                // 正解時：自分以外のプレイ中プレイヤー全員の持ち点を1減点
                 for (let key in players) {
                     if (key !== buzzerBy && players[key].status === 'playing') {
                         players[key].score = Math.max(0, players[key].score - 1);
@@ -948,7 +938,6 @@
             } else if (rule.type === 'n_by_n') {
                 p.score -= rule.m;
             } else if (rule.type === 'attack_survival') {
-                // 不正解時：自分の持ち点を2減点
                 if (p.status === 'playing') {
                     p.score = Math.max(0, p.score - 2);
                     if (p.score <= 0) {
