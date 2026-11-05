@@ -101,7 +101,7 @@
     <!-- Firebase SDK (Modular CDN) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, update, onValue, remove, child, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, update, onValue, remove, child, onDisconnect, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRM6ky2j8tgWxIWeozUKH8UCrPD7jkEQU",
@@ -116,7 +116,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        window.FB = { db, ref, set, get, update, onValue, remove, child, onDisconnect };
+        window.FB = { db, ref, set, get, update, onValue, remove, child, onDisconnect, runTransaction };
     </script>
 </head>
 <body>
@@ -869,24 +869,35 @@
 
     async function pressBuzzer() {
         if (!roomRef) return;
-        const snapshot = await window.FB.get(roomRef);
-        const data = snapshot.val();
-        if (!data || data.gameState !== 'reading' || data.buzzerPressedBy) return;
 
-        if (data.rule && data.rule.type === 'attack_survival') {
-            if (data.players && data.players[myRole] && data.players[myRole].score <= 0) {
-                return;
+        try {
+            const result = await window.FB.runTransaction(roomRef, (currentData) => {
+                if (!currentData) return currentData;
+
+                if (currentData.gameState !== 'reading' || currentData.buzzerPressedBy) {
+                    return;
+                }
+
+                if (currentData.rule && currentData.rule.type === 'attack_survival') {
+                    if (currentData.players && currentData.players[myRole] && currentData.players[myRole].score <= 0) {
+                        return;
+                    }
+                }
+
+                currentData.buzzerPressedBy = myRole;
+                currentData.gameState = 'buzzer_hit';
+                currentData.soundEvent = { type: 1, timestamp: Date.now() };
+
+                return currentData;
+            });
+
+            if (result.committed) {
+                if (synth.speaking) synth.cancel();
+                if (readingTimer) clearTimeout(readingTimer);
             }
+        } catch (error) {
+            console.error("早押し判定のトランザクションエラー:", error);
         }
-
-        if (synth.speaking) synth.cancel();
-        if (readingTimer) clearTimeout(readingTimer);
-
-        await window.FB.update(roomRef, {
-            buzzerPressedBy: myRole,
-            gameState: 'buzzer_hit',
-            soundEvent: { type: 1, timestamp: Date.now() }
-        });
     }
 
     async function judgeAnswer(isCorrect) {
