@@ -419,8 +419,7 @@
             return;
         }
 
-        const playerARef = window.FB.child(roomRef, 'players/A');
-        window.FB.onDisconnect(playerARef).remove();
+        window.FB.onDisconnect(roomRef).remove();
 
         await window.FB.set(roomRef, {
             password: rPass,
